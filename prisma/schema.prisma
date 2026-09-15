@@ -1,13 +1,468 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Get a free hosted Postgres database in seconds: `npx create-db`
+// PubTrack domain schema — org (Phase 2) + catalog (Phase 6) + inventory (Phase 7)
+// + publisher↔library links (Phase 8) + distribution (Phase 9) + sales (Phase 10)
+// + library receiving / StockReceipt (Phase 12).
+// Datasource URL lives in prisma.config.ts (Prisma 7).
 
 generator client {
-  provider = "prisma-client"
-  output   = "../generated/prisma"
+  provider     = "prisma-client"
+  output       = "../generated/prisma"
+  moduleFormat = "cjs"
 }
 
 datasource db {
   provider = "postgresql"
+}
+
+enum Role {
+  SUPER_ADMIN
+  PUBLISHER_ADMIN
+  PUBLISHER_STAFF
+  LIBRARY_ADMIN
+  LIBRARY_STAFF
+}
+
+enum BookFormat {
+  HARDCOVER
+  PAPERBACK
+  MASS_MARKET
+  BOARD_BOOK
+  OTHER
+}
+
+enum CopyStatus {
+  IN_STOCK_PUBLISHER
+  DISTRIBUTED
+  IN_STOCK_LIBRARY
+  SOLD
+  RETURNED
+  LOST
+}
+
+enum InventoryHolderType {
+  PUBLISHER
+  LIBRARY
+}
+
+enum MovementType {
+  PRINT_RECEIPT
+  DISTRIBUTION
+  RECEIPT
+  SALE
+  RETURN
+  ADJUSTMENT
+  LOSS
+}
+
+enum CopyBatchStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum DistributionStatus {
+  DRAFT
+  DISPATCHED
+  PARTIALLY_RECEIVED
+  RECEIVED
+  CANCELLED
+}
+
+enum StockReceiptStatus {
+  DRAFT
+  CONFIRMED
+  CANCELLED
+}
+
+enum ReceiptDiscrepancy {
+  NONE
+  MISSING
+  DAMAGED
+}
+
+model Publisher {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  email     String?
+  phone     String?
+  address   String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users         User[]
+  books         Book[]
+  copies        BookCopy[]
+  copyBatches   CopyGenerationBatch[]
+  libraryLinks  PublisherLibrary[]
+  distributions Distribution[]
+}
+
+model Library {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  email     String?
+  phone     String?
+  address   String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users          User[]
+  copies         BookCopy[]
+  publisherLinks PublisherLibrary[]
+  distributions  Distribution[]
+  sales          Sale[]
+  stockReceipts  StockReceipt[]
+}
+
+/// Partnership: which libraries a publisher may distribute to.
+model PublisherLibrary {
+  id          String   @id @default(cuid())
+  publisherId String
+  libraryId   String
+  isActive    Boolean  @default(true)
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  publisher Publisher @relation(fields: [publisherId], references: [id], onDelete: Cascade)
+  library   Library   @relation(fields: [libraryId], references: [id], onDelete: Cascade)
+
+  @@unique([publisherId, libraryId])
+  @@index([libraryId])
+  @@index([publisherId, isActive])
+}
+
+model User {
+  id               String   @id @default(cuid())
+  email            String   @unique
+  passwordHash     String
+  firstName        String
+  lastName         String
+  role             Role
+  isActive         Boolean  @default(true)
+  refreshTokenHash String?
+  publisherId      String?
+  libraryId        String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  publisher Publisher? @relation(fields: [publisherId], references: [id], onDelete: Restrict)
+  library   Library?   @relation(fields: [libraryId], references: [id], onDelete: Restrict)
+
+  inventoryMovements InventoryMovement[]
+  copyBatches        CopyGenerationBatch[]
+  distributions      Distribution[]
+  sales              Sale[]
+  stockReceipts      StockReceipt[]
+
+  @@index([publisherId])
+  @@index([libraryId])
+}
+
+/// A publisher's title (work). Physical units are tracked per Edition.
+model Book {
+  id            String   @id @default(cuid())
+  publisherId   String
+  title         String
+  subtitle      String?
+  authors       String
+  description   String?
+  language      String   @default("en")
+  category      String?
+  coverImageUrl String?
+  slug          String
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  publisher Publisher @relation(fields: [publisherId], references: [id], onDelete: Restrict)
+  editions  Edition[]
+
+  @@unique([publisherId, slug])
+  @@index([publisherId])
+  @@index([title])
+}
+
+/// A sellable print format of a Book. ISBN-13 is stored digits-only.
+model Edition {
+  id              String     @id @default(cuid())
+  bookId          String
+  isbn            String     @unique
+  isbn10          String?
+  format          BookFormat
+  title           String?
+  publicationDate DateTime?
+  pageCount       Int?
+  listPriceCents  Int
+  currency        String     @default("USD")
+  coverImageUrl   String?
+  isActive        Boolean    @default(true)
+  nextCopyNumber  Int        @default(1)
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  book              Book                   @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  copies            BookCopy[]
+  inventory         Inventory[]
+  movements         InventoryMovement[]
+  copyBatches       CopyGenerationBatch[]
+  distributionItems DistributionItem[]
+  saleItems         SaleItem[]
+  stockReceiptItems StockReceiptItem[]
+
+  @@index([bookId])
+}
+
+/// One physical unit of an Edition. Status is the unit-level source of truth.
+model BookCopy {
+  id                 String     @id @default(cuid())
+  editionId          String
+  publisherId        String
+  libraryId          String?
+  distributionItemId String?
+  status             CopyStatus @default(IN_STOCK_PUBLISHER)
+  copyNumber         Int
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
+
+  edition          Edition           @relation(fields: [editionId], references: [id], onDelete: Restrict)
+  publisher        Publisher         @relation(fields: [publisherId], references: [id], onDelete: Restrict)
+  library          Library?          @relation(fields: [libraryId], references: [id], onDelete: Restrict)
+  qrCode           QrCode?
+  movements        InventoryMovement[]
+  distributionItem  DistributionItem?  @relation(fields: [distributionItemId], references: [id], onDelete: SetNull)
+  saleItem          SaleItem?
+  stockReceiptItems StockReceiptItem[]
+
+  @@unique([editionId, copyNumber])
+  @@index([editionId, status])
+  @@index([publisherId, status])
+  @@index([libraryId, status])
+  @@index([status])
+  @@index([distributionItemId])
+}
+
+/// Opaque token mapped to a copy. The QR payload is this token, never the copy id.
+model QrCode {
+  id        String   @id @default(cuid())
+  copyId    String   @unique
+  token     String   @unique
+  createdAt DateTime @default(now())
+
+  copy BookCopy @relation(fields: [copyId], references: [id], onDelete: Cascade)
+}
+
+/// Derived aggregate per Edition × holder (publisher warehouse or library).
+/// Recomputed transactionally with copy-status changes. Movements are the ledger.
+model Inventory {
+  id                String              @id @default(cuid())
+  editionId         String
+  holderType        InventoryHolderType
+  holderId          String
+  onHand            Int                 @default(0)
+  inTransit         Int                 @default(0)
+  sold              Int                 @default(0)
+  returned          Int                 @default(0)
+  lost              Int                 @default(0)
+  lowStockThreshold Int                 @default(5)
+  version           Int                 @default(0)
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  edition Edition @relation(fields: [editionId], references: [id], onDelete: Restrict)
+
+  @@unique([editionId, holderType, holderId])
+  @@index([holderType, holderId])
+  @@index([editionId])
+}
+
+/// Append-only inventory ledger. Aggregates are a cache; this table is the truth.
+model InventoryMovement {
+  id             String                @id @default(cuid())
+  type           MovementType
+  editionId      String
+  copyId         String?
+  quantity       Int
+  fromHolderType InventoryHolderType?
+  fromHolderId   String?
+  toHolderType   InventoryHolderType?
+  toHolderId     String?
+  actorUserId    String
+  reason         String?
+  refType        String?
+  refId          String?
+  createdAt      DateTime              @default(now())
+
+  edition Edition   @relation(fields: [editionId], references: [id], onDelete: Restrict)
+  copy    BookCopy? @relation(fields: [copyId], references: [id], onDelete: SetNull)
+  actor   User      @relation(fields: [actorUserId], references: [id], onDelete: Restrict)
+
+  @@index([editionId, createdAt])
+  @@index([copyId])
+  @@index([actorUserId])
+  @@index([refType, refId])
+  @@index([createdAt])
+}
+
+/// Batch record for bulk copy + QR generation (sync in Phase 7; queue in Phase 19).
+model CopyGenerationBatch {
+  id                String          @id @default(cuid())
+  publisherId       String
+  editionId         String
+  requestedQuantity Int
+  createdQuantity   Int             @default(0)
+  status            CopyBatchStatus @default(PENDING)
+  actorUserId       String
+  idempotencyKey    String?
+  errorMessage      String?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  publisher Publisher @relation(fields: [publisherId], references: [id], onDelete: Restrict)
+  edition   Edition   @relation(fields: [editionId], references: [id], onDelete: Restrict)
+  actor     User      @relation(fields: [actorUserId], references: [id], onDelete: Restrict)
+
+  @@unique([publisherId, idempotencyKey])
+  @@index([publisherId, createdAt])
+  @@index([editionId])
+}
+
+/// Publisher shipment of copies to a linked library.
+/// Draft allocates intent; dispatch marks copies DISTRIBUTED and moves warehouse
+/// on-hand onto the library's in-transit aggregate. Receiving is Phase 12.
+model Distribution {
+  id             String             @id @default(cuid())
+  publisherId    String
+  libraryId      String
+  status         DistributionStatus @default(DRAFT)
+  code           String
+  notes          String?
+  actorUserId    String
+  dispatchedAt   DateTime?
+  cancelledAt    DateTime?
+  idempotencyKey String?
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  publisher Publisher          @relation(fields: [publisherId], references: [id], onDelete: Restrict)
+  library   Library            @relation(fields: [libraryId], references: [id], onDelete: Restrict)
+  actor         User               @relation(fields: [actorUserId], references: [id], onDelete: Restrict)
+  items         DistributionItem[]
+  stockReceipts StockReceipt[]
+
+  @@unique([publisherId, code])
+  @@unique([publisherId, idempotencyKey])
+  @@index([publisherId, status, createdAt])
+  @@index([libraryId, status])
+  @@index([createdAt])
+}
+
+model DistributionItem {
+  id             String   @id @default(cuid())
+  distributionId String
+  editionId      String
+  quantity       Int
+  createdAt      DateTime @default(now())
+
+  distribution Distribution @relation(fields: [distributionId], references: [id], onDelete: Cascade)
+  edition      Edition      @relation(fields: [editionId], references: [id], onDelete: Restrict)
+  copies       BookCopy[]
+
+  @@index([distributionId])
+  @@index([editionId])
+}
+
+/// Library point-of-sale header. Idempotency is unique per library so offline
+/// (and web) retries never double-sell. Inventory mutation is transactional.
+model Sale {
+  id             String   @id @default(cuid())
+  libraryId      String
+  code           String
+  currency       String   @default("USD")
+  totalCents     Int
+  notes          String?
+  actorUserId    String
+  soldAt         DateTime @default(now())
+  idempotencyKey String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  library Library    @relation(fields: [libraryId], references: [id], onDelete: Restrict)
+  actor   User       @relation(fields: [actorUserId], references: [id], onDelete: Restrict)
+  items   SaleItem[]
+
+  @@unique([libraryId, code])
+  @@unique([libraryId, idempotencyKey])
+  @@index([libraryId, soldAt])
+  @@index([soldAt])
+  @@index([createdAt])
+}
+
+model SaleItem {
+  id             String   @id @default(cuid())
+  saleId         String
+  editionId      String
+  copyId         String   @unique
+  unitPriceCents Int
+  quantity       Int      @default(1)
+  createdAt      DateTime @default(now())
+
+  sale    Sale     @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  edition Edition  @relation(fields: [editionId], references: [id], onDelete: Restrict)
+  copy    BookCopy @relation(fields: [copyId], references: [id], onDelete: Restrict)
+
+  @@index([saleId])
+  @@index([editionId])
+}
+
+/// Library confirmation of a dispatched shipment. Copy-level lines record
+/// what arrived, what is missing, and damaged units. Confirm moves remaining
+/// DISTRIBUTED copies to IN_STOCK_LIBRARY and writes RECEIPT movements.
+model StockReceipt {
+  id             String             @id @default(cuid())
+  distributionId String
+  libraryId      String
+  status         StockReceiptStatus @default(DRAFT)
+  code           String
+  notes          String?
+  actorUserId    String
+  confirmedAt    DateTime?
+  cancelledAt    DateTime?
+  idempotencyKey String?
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  distribution Distribution       @relation(fields: [distributionId], references: [id], onDelete: Restrict)
+  library      Library            @relation(fields: [libraryId], references: [id], onDelete: Restrict)
+  actor        User               @relation(fields: [actorUserId], references: [id], onDelete: Restrict)
+  items        StockReceiptItem[]
+
+  @@unique([libraryId, code])
+  @@unique([libraryId, idempotencyKey])
+  @@index([libraryId, status, createdAt])
+  @@index([distributionId])
+  @@index([createdAt])
+}
+
+model StockReceiptItem {
+  id             String             @id @default(cuid())
+  stockReceiptId String
+  editionId      String
+  copyId         String
+  received       Boolean            @default(true)
+  discrepancy    ReceiptDiscrepancy @default(NONE)
+  notes          String?
+  createdAt      DateTime           @default(now())
+
+  stockReceipt StockReceipt @relation(fields: [stockReceiptId], references: [id], onDelete: Cascade)
+  edition      Edition      @relation(fields: [editionId], references: [id], onDelete: Restrict)
+  copy         BookCopy     @relation(fields: [copyId], references: [id], onDelete: Restrict)
+
+  @@index([stockReceiptId])
+  @@index([editionId])
+  @@index([copyId])
 }
