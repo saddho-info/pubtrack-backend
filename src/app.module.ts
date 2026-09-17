@@ -1,3 +1,4 @@
+import { BullModule } from '@nestjs/bullmq';
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { AppController } from './app.controller';
@@ -10,10 +11,12 @@ import { validateEnv } from './config/env.validation';
 import { DistributionsModule } from './distributions/distributions.module';
 import { InventoryModule } from './inventory/inventory.module';
 import { LibrariesModule } from './libraries/libraries.module';
+import { NotificationsModule } from './notifications/notifications.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { PublishersModule } from './publishers/publishers.module';
 import { ReceivingModule } from './receiving/receiving.module';
 import { SalesModule } from './sales/sales.module';
+import { SyncModule } from './sync/sync.module';
 import { UsersModule } from './users/users.module';
 
 @Module({
@@ -22,6 +25,11 @@ import { UsersModule } from './users/users.module';
       isGlobal: true,
       envFilePath: '.env',
       validate: validateEnv,
+    }),
+    BullModule.forRoot({
+      connection: {
+        url: process.env.REDIS_URL ?? 'redis://localhost:6379',
+      },
     }),
     PrismaModule,
     AuthModule,
@@ -35,6 +43,8 @@ import { UsersModule } from './users/users.module';
     ReceivingModule,
     SalesModule,
     AnalyticsModule,
+    SyncModule,
+    NotificationsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

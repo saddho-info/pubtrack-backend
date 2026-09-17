@@ -2,7 +2,9 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import {
   CopyStatus,
@@ -24,6 +26,7 @@ import {
 } from '../common/utils/scoped-where';
 import { assertCopyTransition } from '../inventory/inventory.math';
 import { InventoryService } from '../inventory/inventory.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateSaleDto } from './dto/create-sale.dto';
 import { CreateSaleItemDto } from './dto/create-sale-item.dto';
@@ -85,9 +88,12 @@ type LockedCopy = {
 
 @Injectable()
 export class SalesService {
+  private readonly logger = new Logger(SalesService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly inventory: InventoryService,
+    @Optional() private readonly notifications?: NotificationsService,
   ) {}
 
   async create(
@@ -189,6 +195,12 @@ export class SalesService {
       { timeout: 60_000, maxWait: 10_000 },
     );
 
+    await this.notifications?.onSaleCreated(created).catch((error: unknown) => {
+      this.logger.error(
+        `Sale ${created.id} committed but notification enqueue failed`,
+        error instanceof Error ? error.stack : String(error),
+      );
+    });
     return this.serialize(created);
   }
 

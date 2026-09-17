@@ -1,6 +1,7 @@
 // PubTrack domain schema — org (Phase 2) + catalog (Phase 6) + inventory (Phase 7)
 // + publisher↔library links (Phase 8) + distribution (Phase 9) + sales (Phase 10)
-// + library receiving / StockReceipt (Phase 12).
+// + library receiving / StockReceipt (Phase 12)
+// + offline sync (Phase 18) + notifications (Phase 19) + audit logs (Phase 20).
 // Datasource URL lives in prisma.config.ts (Prisma 7).
 
 generator client {
@@ -80,6 +81,24 @@ enum ReceiptDiscrepancy {
   DAMAGED
 }
 
+enum SyncTransactionType {
+  SALE
+  STOCK_RECEIPT
+}
+
+enum SyncTransactionStatus {
+  PENDING
+  APPLIED
+  REJECTED
+}
+
+enum NotificationType {
+  SALE_CREATED
+  LOW_STOCK
+  RECEIPT_CONFIRMED
+  SYNC_FAILED
+}
+
 model Publisher {
   id        String   @id @default(cuid())
   name      String
@@ -97,6 +116,7 @@ model Publisher {
   copyBatches   CopyGenerationBatch[]
   libraryLinks  PublisherLibrary[]
   distributions Distribution[]
+  notifications Notification[]
 }
 
 model Library {
@@ -114,8 +134,10 @@ model Library {
   copies         BookCopy[]
   publisherLinks PublisherLibrary[]
   distributions  Distribution[]
-  sales          Sale[]
-  stockReceipts  StockReceipt[]
+  sales            Sale[]
+  stockReceipts    StockReceipt[]
+  syncTransactions SyncTransaction[]
+  notifications    Notification[]
 }
 
 /// Partnership: which libraries a publisher may distribute to.
@@ -158,6 +180,10 @@ model User {
   distributions      Distribution[]
   sales              Sale[]
   stockReceipts      StockReceipt[]
+  syncTransactions   SyncTransaction[]
+  deviceTokens       DeviceToken[]
+  notifications      Notification[]
+  auditLogs          AuditLog[]
 
   @@index([publisherId])
   @@index([libraryId])
@@ -465,4 +491,85 @@ model StockReceiptItem {
   @@index([stockReceiptId])
   @@index([editionId])
   @@index([copyId])
+}
+
+/// Offline client transaction ledger. clientId is the mobile-generated UUID.
+model SyncTransaction {
+  id           String                @id @default(cuid())
+  clientId     String
+  libraryId    String
+  actorUserId  String
+  type         SyncTransactionType
+  status       SyncTransactionStatus @default(PENDING)
+  payload      Json
+  result       Json?
+  rejectReason String?
+  appliedAt    DateTime?
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
+
+  library Library @relation(fields: [libraryId], references: [id], onDelete: Restrict)
+  actor   User    @relation(fields: [actorUserId], references: [id], onDelete: Restrict)
+
+  @@unique([libraryId, clientId])
+  @@index([libraryId, status, createdAt])
+  @@index([actorUserId])
+}
+
+/// In-app notification source of truth. Push (FCM) is delivery only.
+model Notification {
+  id          String           @id @default(cuid())
+  sourceKey   String?          @unique
+  type        NotificationType
+  title       String
+  body        String
+  publisherId String?
+  libraryId   String?
+  userId      String?
+  readAt      DateTime?
+  payload     Json?
+  createdAt   DateTime         @default(now())
+
+  publisher Publisher? @relation(fields: [publisherId], references: [id], onDelete: Cascade)
+  library   Library?   @relation(fields: [libraryId], references: [id], onDelete: Cascade)
+  user      User?      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([publisherId, createdAt])
+  @@index([libraryId, createdAt])
+  @@index([userId, readAt])
+  @@index([createdAt])
+}
+
+model DeviceToken {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  platform  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+/// Inventory-mutating action log. Movements remain the quantity ledger.
+model AuditLog {
+  id          String   @id @default(cuid())
+  actorUserId String?
+  action      String
+  entityType  String
+  entityId    String?
+  method      String
+  path        String
+  statusCode  Int?
+  metadata    Json?
+  ip          String?
+  createdAt   DateTime @default(now())
+
+  actor User? @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([entityType, entityId])
+  @@index([actorUserId, createdAt])
+  @@index([createdAt])
 }
