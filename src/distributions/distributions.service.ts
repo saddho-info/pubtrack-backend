@@ -327,15 +327,16 @@ export class DistributionsService {
 
       for (const copy of copies) {
         assertCopyTransition(copy.status, CopyStatus.DISTRIBUTED);
-        await tx.bookCopy.update({
-          where: { id: copy.id },
-          data: {
-            status: CopyStatus.DISTRIBUTED,
-            libraryId: distribution.libraryId,
-            distributionItemId: item.id,
-          },
-        });
       }
+
+      await tx.bookCopy.updateMany({
+        where: { id: { in: copies.map((copy) => copy.id) } },
+        data: {
+          status: CopyStatus.DISTRIBUTED,
+          libraryId: distribution.libraryId,
+          distributionItemId: item.id,
+        },
+      });
 
       await this.inventory.applyMovement(tx, {
         type: MovementType.DISTRIBUTION,

@@ -266,7 +266,9 @@ model BookCopy {
 
   @@unique([editionId, copyNumber])
   @@index([editionId, status])
+  @@index([editionId, libraryId, status])
   @@index([publisherId, status])
+  @@index([publisherId, editionId, status])
   @@index([libraryId, status])
   @@index([status])
   @@index([distributionItemId])
@@ -488,6 +490,7 @@ model StockReceiptItem {
   edition      Edition      @relation(fields: [editionId], references: [id], onDelete: Restrict)
   copy         BookCopy     @relation(fields: [copyId], references: [id], onDelete: Restrict)
 
+  @@unique([stockReceiptId, copyId])
   @@index([stockReceiptId])
   @@index([editionId])
   @@index([copyId])
@@ -535,7 +538,9 @@ model Notification {
   user      User?      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([publisherId, createdAt])
+  @@index([publisherId, readAt, createdAt])
   @@index([libraryId, createdAt])
+  @@index([libraryId, readAt, createdAt])
   @@index([userId, readAt])
   @@index([createdAt])
 }

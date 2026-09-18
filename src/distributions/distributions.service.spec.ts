@@ -116,6 +116,7 @@ describe('DistributionsService', () => {
     bookCopy: {
       findMany: jest.fn(),
       update: jest.fn(),
+      updateMany: jest.fn(),
     },
     $queryRaw: jest.fn(),
     $transaction: jest.fn(),
@@ -240,7 +241,15 @@ describe('DistributionsService', () => {
       publisherStaffUser('pub_1'),
     );
 
-    expect(prisma.bookCopy.update).toHaveBeenCalledTimes(4);
+    expect(prisma.bookCopy.updateMany).toHaveBeenCalledTimes(1);
+    expect(prisma.bookCopy.updateMany).toHaveBeenCalledWith({
+      where: { id: { in: ['copy_1', 'copy_2', 'copy_3', 'copy_4'] } },
+      data: {
+        status: CopyStatus.DISTRIBUTED,
+        libraryId: 'lib_1',
+        distributionItemId: 'item_1',
+      },
+    });
     expect(inventory.applyMovement).toHaveBeenCalledWith(
       prisma,
       expect.objectContaining({

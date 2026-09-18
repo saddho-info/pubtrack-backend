@@ -241,52 +241,42 @@ export class AnalyticsService {
     publisherId: string | null,
     soldAt: Prisma.DateTimeFilter,
   ): Promise<OverviewLibraryRank[]> {
-    const sales = await this.prisma.sale.findMany({
-      where: {
-        soldAt,
-        items: {
-          some: {
-            edition: this.publisherEditionFilter(publisherId) ?? {},
-          },
-        },
-      },
-      select: {
-        libraryId: true,
-        library: { select: { name: true } },
-        items: {
-          where: {
-            edition: this.publisherEditionFilter(publisherId),
-          },
-          select: { quantity: true },
-        },
-      },
-    });
+    const from = soldAt.gte instanceof Date ? soldAt.gte : undefined;
+    const to = soldAt.lte instanceof Date ? soldAt.lte : new Date();
 
-    const totals = new Map<string, { name: string; sold: number }>();
-    for (const sale of sales) {
-      const units = sale.items.reduce((sum, item) => sum + item.quantity, 0);
-      if (units === 0) {
-        continue;
-      }
-      const existing = totals.get(sale.libraryId);
-      if (existing) {
-        existing.sold += units;
-      } else {
-        totals.set(sale.libraryId, {
-          name: sale.library.name,
-          sold: units,
-        });
-      }
-    }
+    type RankRow = { libraryId: string; name: string; sold: number | bigint };
 
-    return [...totals.entries()]
-      .map(([libraryId, row]) => ({
-        libraryId,
-        name: row.name,
-        sold: row.sold,
-      }))
-      .sort((a, b) => b.sold - a.sold || a.name.localeCompare(b.name))
-      .slice(0, TOP_LIMIT);
+    const dateFilter = from
+      ? Prisma.sql`AND s."soldAt" >= ${from} AND s."soldAt" <= ${to}`
+      : Prisma.sql`AND s."soldAt" <= ${to}`;
+    const publisherFilter = publisherId
+      ? Prisma.sql`AND b."publisherId" = ${publisherId}`
+      : Prisma.sql``;
+
+    const rows = await this.prisma.$queryRaw<RankRow[]>(Prisma.sql`
+      SELECT
+        s."libraryId" AS "libraryId",
+        l.name AS name,
+        COALESCE(SUM(si.quantity), 0)::int AS sold
+      FROM "SaleItem" si
+      INNER JOIN "Sale" s ON s.id = si."saleId"
+      INNER JOIN "Library" l ON l.id = s."libraryId"
+      INNER JOIN "Edition" e ON e.id = si."editionId"
+      INNER JOIN "Book" b ON b.id = e."bookId"
+      WHERE 1=1
+        ${dateFilter}
+        ${publisherFilter}
+      GROUP BY s."libraryId", l.name
+      HAVING SUM(si.quantity) > 0
+      ORDER BY sold DESC, l.name ASC
+      LIMIT ${TOP_LIMIT}
+    `);
+
+    return rows.map((row) => ({
+      libraryId: row.libraryId,
+      name: row.name,
+      sold: Number(row.sold),
+    }));
   }
 
   private async loadActivity(

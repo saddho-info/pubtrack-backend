@@ -407,30 +407,46 @@ export class InventoryService {
   }
 
   private async lowStockEditionIds(user: AuthUser): Promise<string[]> {
-    const scope = inventoryScopeWhere(user);
-    const rows = await this.prisma.inventory.findMany({
-      where: scope,
-      select: {
-        editionId: true,
-        holderType: true,
-        onHand: true,
-        lowStockThreshold: true,
-      },
-    });
-
     const preferWarehouse =
       isSuperAdmin(user.role) || isPublisherRole(user.role);
-    return rows
-      .filter((row) => {
-        if (
-          preferWarehouse &&
-          row.holderType !== InventoryHolderType.PUBLISHER
-        ) {
-          return false;
-        }
-        return isLowStock(row.onHand, row.lowStockThreshold);
-      })
-      .map((row) => row.editionId);
+
+    type Row = { editionId: string };
+
+    if (isLibraryRole(user.role) && user.libraryId) {
+      const rows = await this.prisma.$queryRaw<Row[]>(Prisma.sql`
+        SELECT DISTINCT "editionId"
+        FROM "Inventory"
+        WHERE "holderType" = 'LIBRARY'::"InventoryHolderType"
+          AND "holderId" = ${user.libraryId}
+          AND "onHand" <= "lowStockThreshold"
+      `);
+      return rows.map((row) => row.editionId);
+    }
+
+    if (preferWarehouse && isPublisherRole(user.role) && user.publisherId) {
+      const rows = await this.prisma.$queryRaw<Row[]>(Prisma.sql`
+        SELECT DISTINCT i."editionId"
+        FROM "Inventory" i
+        INNER JOIN "Edition" e ON e.id = i."editionId"
+        INNER JOIN "Book" b ON b.id = e."bookId"
+        WHERE b."publisherId" = ${user.publisherId}
+          AND i."holderType" = 'PUBLISHER'::"InventoryHolderType"
+          AND i."onHand" <= i."lowStockThreshold"
+      `);
+      return rows.map((row) => row.editionId);
+    }
+
+    if (preferWarehouse && isSuperAdmin(user.role)) {
+      const rows = await this.prisma.$queryRaw<Row[]>(Prisma.sql`
+        SELECT DISTINCT "editionId"
+        FROM "Inventory"
+        WHERE "holderType" = 'PUBLISHER'::"InventoryHolderType"
+          AND "onHand" <= "lowStockThreshold"
+      `);
+      return rows.map((row) => row.editionId);
+    }
+
+    return [];
   }
 
   private buildEditionWhere(

@@ -25,6 +25,7 @@ describe('AnalyticsService', () => {
     sale: { findMany: jest.fn() },
     inventoryMovement: { findMany: jest.fn() },
     library: { findMany: jest.fn() },
+    $queryRaw: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -36,6 +37,7 @@ describe('AnalyticsService', () => {
     prisma.sale.findMany.mockResolvedValue([]);
     prisma.inventoryMovement.findMany.mockResolvedValue([]);
     prisma.library.findMany.mockResolvedValue([]);
+    prisma.$queryRaw.mockResolvedValue([]);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -132,6 +134,9 @@ describe('AnalyticsService', () => {
         library: { name: 'Riverside Public' },
         items: [{ quantity: 3 }, { quantity: 1 }],
       },
+    ]);
+    prisma.$queryRaw.mockResolvedValue([
+      { libraryId: 'lib_1', name: 'Riverside Public', sold: 4 },
     ]);
     prisma.inventoryMovement.findMany.mockResolvedValue([
       {

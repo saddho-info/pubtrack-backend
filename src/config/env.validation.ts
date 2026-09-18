@@ -67,6 +67,7 @@ export class EnvironmentVariables {
   @Min(60)
   JWT_REFRESH_EXPIRES_SECONDS = 604800;
 
+  /** Comma-separated browser origins. Required when NODE_ENV=production. */
   @IsOptional()
   @IsString()
   CORS_ORIGINS?: string;
@@ -151,6 +152,15 @@ export function validateEnv(
       .flatMap((error) => Object.values(error.constraints ?? {}))
       .join('; ');
     throw new Error(`Invalid environment variables: ${messages}`);
+  }
+
+  if (validated.NODE_ENV === 'production') {
+    const origins = validated.CORS_ORIGINS?.trim();
+    if (!origins) {
+      throw new Error(
+        'Invalid environment variables: CORS_ORIGINS is required in production',
+      );
+    }
   }
 
   return { ...config, ...validated };

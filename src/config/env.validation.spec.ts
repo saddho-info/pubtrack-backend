@@ -23,6 +23,21 @@ describe('validateEnv', () => {
     expect(env.JWT_ACCESS_EXPIRES_SECONDS).toBe(900);
     expect(env.JWT_REFRESH_EXPIRES_SECONDS).toBe(604800);
   });
+
+  it('requires CORS_ORIGINS in production', () => {
+    expect(() =>
+      validateEnv({ ...base, NODE_ENV: 'production' }),
+    ).toThrow(/CORS_ORIGINS is required in production/);
+  });
+
+  it('accepts CORS_ORIGINS in production', () => {
+    const env = validateEnv({
+      ...base,
+      NODE_ENV: 'production',
+      CORS_ORIGINS: 'https://publisher.example.com',
+    });
+    expect(env.CORS_ORIGINS).toBe('https://publisher.example.com');
+  });
 });
 
 describe('resolveDatabaseUrl', () => {
