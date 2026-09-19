@@ -4,10 +4,27 @@ import { NotificationsController } from './notifications.controller';
 import { NotificationsProcessor } from './notifications.processor';
 import { NotificationsService } from './notifications.service';
 
+const redisUrl = process.env.REDIS_URL?.trim();
+
+const queueImports = redisUrl
+  ? [BullModule.registerQueue({ name: 'notifications' })]
+  : [];
+
+const queueProviders = redisUrl
+  ? [NotificationsProcessor]
+  : [
+      {
+        provide: 'BullQueue_notifications',
+        useValue: {
+          add: async () => ({ id: 'notifications-disabled' }),
+        },
+      },
+    ];
+
 @Module({
-  imports: [BullModule.registerQueue({ name: 'notifications' })],
+  imports: queueImports,
   controllers: [NotificationsController],
-  providers: [NotificationsService, NotificationsProcessor],
+  providers: [NotificationsService, ...queueProviders],
   exports: [NotificationsService],
 })
 export class NotificationsModule {}

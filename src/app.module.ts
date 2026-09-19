@@ -1,6 +1,6 @@
-import { BullModule } from '@nestjs/bullmq';
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { BullModule } from '@nestjs/bullmq';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AnalyticsModule } from './analytics/analytics.module';
@@ -21,6 +21,8 @@ import { SalesModule } from './sales/sales.module';
 import { SyncModule } from './sync/sync.module';
 import { UsersModule } from './users/users.module';
 
+const redisUrl = process.env.REDIS_URL?.trim();
+
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -28,11 +30,13 @@ import { UsersModule } from './users/users.module';
       envFilePath: '.env',
       validate: validateEnv,
     }),
-    BullModule.forRoot({
-      connection: {
-        url: process.env.REDIS_URL ?? 'redis://localhost:6379',
-      },
-    }),
+    ...(redisUrl
+      ? [
+          BullModule.forRoot({
+            connection: { url: redisUrl },
+          }),
+        ]
+      : []),
     PrismaModule,
     AuthModule,
     UsersModule,

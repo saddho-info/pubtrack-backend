@@ -62,6 +62,32 @@ export class HttpExceptionFilter implements ExceptionFilter {
       return this.prismaError(exception);
     }
 
+    if (exception instanceof Prisma.PrismaClientInitializationError) {
+      return {
+        statusCode: HttpStatus.SERVICE_UNAVAILABLE,
+        message:
+          'Database is unavailable. Check DATABASE_URL and that migrations are applied.',
+        error: 'Service Unavailable',
+      };
+    }
+
+    // Prisma driver-adapter / pg errors often wrap as plain Error.
+    if (exception instanceof Error) {
+      const msg = exception.message;
+      if (
+        /relation .* does not exist/i.test(msg) ||
+        /table .* does not exist/i.test(msg) ||
+        exception.name === 'DriverAdapterError'
+      ) {
+        return {
+          statusCode: HttpStatus.SERVICE_UNAVAILABLE,
+          message:
+            'Database schema is missing or incomplete. Run `npx prisma migrate deploy` against Neon, then `npm run prisma:seed`.',
+          error: 'Service Unavailable',
+        };
+      }
+    }
+
     return {
       statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
       message: 'Internal server error',
