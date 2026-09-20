@@ -173,7 +173,7 @@ export class CopiesService {
     ]);
 
     return {
-      data: data.map((copy) => this.serialize(copy)),
+      data: await Promise.all(data.map((copy) => this.serialize(copy))),
       meta: paginatedMeta(page, limit, total),
     };
   }
