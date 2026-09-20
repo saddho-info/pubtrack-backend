@@ -5,7 +5,11 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { InventoryHolderType, Prisma } from '../../generated/prisma/client';
+import {
+  DistributionStatus,
+  InventoryHolderType,
+  Prisma,
+} from '../../generated/prisma/client';
 import { paginatedMeta } from '../common/dto/pagination.dto';
 import {
   AuthUser,
@@ -25,6 +29,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreateLibraryDto } from './dto/create-library.dto';
 import { LibraryQueryDto } from './dto/library-query.dto';
 import { LinkLibraryDto } from './dto/link-library.dto';
+import { PublisherPerformanceResponseDto } from './dto/publisher-performance-response.dto';
 import { UpdateLibraryDto } from './dto/update-library.dto';
 import { UpdateLibraryLinkDto } from './dto/update-library-link.dto';
 
@@ -175,6 +180,84 @@ export class LibrariesService {
         : EMPTY_STOCK;
 
     return this.serialize(library, link, stock);
+  }
+
+  async getPublisherPerformance(
+    libraryId: string,
+    user: AuthUser,
+  ): Promise<PublisherPerformanceResponseDto> {
+    if (!isPublisherRole(user.role) || !user.publisherId) {
+      throw new ForbiddenException('Publisher scope required');
+    }
+    const publisherId = user.publisherId;
+
+    const library = await this.prisma.library.findFirst({
+      where: {
+        id: libraryId,
+        publisherLinks: { some: { publisherId } },
+      },
+      select: { id: true, name: true, slug: true },
+    });
+    if (!library) {
+      throw new NotFoundException(`Library ${libraryId} not found`);
+    }
+
+    const [distributed, inventory, revenue] = await Promise.all([
+      this.prisma.distributionItem.aggregate({
+        where: {
+          edition: { book: { publisherId } },
+          distribution: {
+            publisherId,
+            libraryId,
+            status: {
+              in: [
+                DistributionStatus.DISPATCHED,
+                DistributionStatus.PARTIALLY_RECEIVED,
+                DistributionStatus.RECEIVED,
+              ],
+            },
+          },
+        },
+        _sum: { quantity: true },
+      }),
+      this.prisma.inventory.aggregate({
+        where: {
+          holderType: InventoryHolderType.LIBRARY,
+          holderId: libraryId,
+          edition: { book: { publisherId } },
+        },
+        _sum: {
+          onHand: true,
+          inTransit: true,
+          sold: true,
+        },
+      }),
+      this.prisma.sale.groupBy({
+        by: ['currency'],
+        where: {
+          libraryId,
+          items: {
+            some: { edition: { book: { publisherId } } },
+          },
+        },
+        _sum: { totalCents: true },
+        orderBy: { currency: 'asc' },
+      }),
+    ]);
+
+    return {
+      library,
+      summary: {
+        totalDistributed: distributed._sum.quantity ?? 0,
+        inStock: inventory._sum.onHand ?? 0,
+        inTransit: inventory._sum.inTransit ?? 0,
+        sold: inventory._sum.sold ?? 0,
+        revenueByCurrency: revenue.map((row) => ({
+          currency: row.currency,
+          totalCents: row._sum.totalCents ?? 0,
+        })),
+      },
+    };
   }
 
   async update(id: string, dto: UpdateLibraryDto, user: AuthUser) {

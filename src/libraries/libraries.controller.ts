@@ -26,6 +26,7 @@ import type { AuthUser } from '../common/types/auth-user';
 import { CreateLibraryDto } from './dto/create-library.dto';
 import { LibraryQueryDto } from './dto/library-query.dto';
 import { LinkLibraryDto } from './dto/link-library.dto';
+import { PublisherPerformanceResponseDto } from './dto/publisher-performance-response.dto';
 import { UnlinkLibraryQueryDto } from './dto/unlink-library-query.dto';
 import { UpdateLibraryDto } from './dto/update-library.dto';
 import { UpdateLibraryLinkDto } from './dto/update-library-link.dto';
@@ -40,6 +41,10 @@ const READ_ROLES = [
 ] as const;
 
 const MANAGE_ROLES = [Role.SUPER_ADMIN, Role.PUBLISHER_ADMIN] as const;
+const PUBLISHER_ROLES = [
+  Role.PUBLISHER_ADMIN,
+  Role.PUBLISHER_STAFF,
+] as const;
 
 @ApiTags('libraries')
 @ApiBearerAuth()
@@ -70,6 +75,19 @@ export class LibrariesController {
   })
   link(@Body() dto: LinkLibraryDto, @CurrentUser() user: AuthUser) {
     return this.librariesService.link(dto, user);
+  }
+
+  @Get(':libraryId/publisher-performance')
+  @Roles(...PUBLISHER_ROLES)
+  @ApiOkResponse({
+    description: 'Authenticated publisher performance at one linked library',
+    type: PublisherPerformanceResponseDto,
+  })
+  publisherPerformance(
+    @Param('libraryId') libraryId: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.librariesService.getPublisherPerformance(libraryId, user);
   }
 
   @Get(':id')
