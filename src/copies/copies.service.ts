@@ -31,6 +31,13 @@ import { QrService } from './qr.service';
 
 const COPY_CHUNK = 100;
 
+export type LabelCopy = {
+  copyNumber: number;
+  qrToken: string;
+  isbn: string;
+  title: string;
+};
+
 const copyInclude = {
   qrCode: { select: { token: true } },
   edition: {
@@ -176,6 +183,48 @@ export class CopiesService {
       data: await Promise.all(data.map((copy) => this.serialize(copy))),
       meta: paginatedMeta(page, limit, total),
     };
+  }
+
+  async findAllForLabels(
+    editionId: string,
+    options: { status?: CopyStatus; limit: number; offset: number },
+    user: AuthUser,
+  ): Promise<LabelCopy[]> {
+    const edition = await this.requireEditionForPublisher(editionId, user);
+    const copies = await this.prisma.bookCopy.findMany({
+      where: {
+        editionId,
+        publisherId: edition.book.publisherId,
+        ...(options.status ? { status: options.status } : {}),
+        qrCode: { isNot: null },
+      },
+      skip: options.offset,
+      take: options.limit,
+      orderBy: { copyNumber: 'asc' },
+      select: {
+        copyNumber: true,
+        qrCode: { select: { token: true } },
+        edition: {
+          select: {
+            isbn: true,
+            book: { select: { title: true } },
+          },
+        },
+      },
+    });
+
+    return copies.flatMap((copy) =>
+      copy.qrCode
+        ? [
+            {
+              copyNumber: copy.copyNumber,
+              qrToken: copy.qrCode.token,
+              isbn: copy.edition.isbn,
+              title: copy.edition.book.title,
+            },
+          ]
+        : [],
+    );
   }
 
   async findOne(id: string, user: AuthUser, includeQrImage = false) {

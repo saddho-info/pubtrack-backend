@@ -11,6 +11,7 @@ import { CopiesModule } from './copies/copies.module';
 import { validateEnv } from './config/env.validation';
 import { DistributionsModule } from './distributions/distributions.module';
 import { InventoryModule } from './inventory/inventory.module';
+import { LabelsModule } from './labels/labels.module';
 import { LibrariesModule } from './libraries/libraries.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { PrismaModule } from './prisma/prisma.module';
@@ -44,6 +45,7 @@ const redisUrl = process.env.REDIS_URL?.trim();
     LibrariesModule,
     BooksModule,
     CopiesModule,
+    LabelsModule,
     InventoryModule,
     DistributionsModule,
     ReceivingModule,

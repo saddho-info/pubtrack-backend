@@ -14,4 +14,10 @@ describe('QrService', () => {
     expect(dataUrl.startsWith('data:image/png;base64,')).toBe(true);
     expect(dataUrl.length).toBeGreaterThan(100);
   });
+
+  it('renders a PNG buffer for a token', async () => {
+    const buffer = await service.toBuffer('opaque-token-example');
+    expect(buffer.subarray(1, 4).toString()).toBe('PNG');
+    expect(buffer.length).toBeGreaterThan(100);
+  });
 });

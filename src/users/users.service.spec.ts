@@ -97,4 +97,74 @@ describe('UsersService', () => {
       service.findOne('user_ps', superAdminUser),
     ).resolves.toMatchObject({ id: 'user_ps', email: 'nathan.k@example.net' });
   });
+
+  it('lets SUPER_ADMIN filter users by libraryId', async () => {
+    const libraryUser = {
+      ...staff,
+      id: 'user_la',
+      email: 'admin@library.example',
+      role: Role.LIBRARY_ADMIN,
+      publisherId: null,
+      libraryId: 'lib_1',
+    };
+    prisma.$transaction.mockResolvedValue([[libraryUser], 1]);
+
+    const result = await service.findAll(
+      { page: 1, limit: 20, libraryId: 'lib_1' },
+      superAdminUser,
+    );
+
+    expect(prisma.$transaction).toHaveBeenCalled();
+    const findManyArgs = prisma.user.findMany.mock.calls[0]?.[0] as {
+      where: { libraryId?: string };
+    };
+    expect(findManyArgs.where.libraryId).toBe('lib_1');
+    expect(result.data).toHaveLength(1);
+    expect(result.data[0].email).toBe('admin@library.example');
+  });
+
+  it('blocks a library admin from listing another library via libraryId', async () => {
+    await expect(
+      service.findAll(
+        { page: 1, limit: 20, libraryId: 'lib_other' },
+        libraryAdminUser('lib_1'),
+      ),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('lets SUPER_ADMIN create a library admin with libraryId', async () => {
+    const libraryAdmin = {
+      ...staff,
+      id: 'user_la',
+      email: 'owner@library.example',
+      role: Role.LIBRARY_ADMIN,
+      publisherId: null,
+      libraryId: 'lib_1',
+    };
+    prisma.user.create.mockResolvedValue(libraryAdmin);
+
+    const created = await service.create(
+      {
+        email: 'owner@library.example',
+        password: 'ChangeMe123!',
+        firstName: 'Lib',
+        lastName: 'Owner',
+        role: Role.LIBRARY_ADMIN,
+        libraryId: 'lib_1',
+      },
+      superAdminUser,
+    );
+
+    expect(created.role).toBe(Role.LIBRARY_ADMIN);
+    expect(created.libraryId).toBe('lib_1');
+    expect(prisma.user.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          role: Role.LIBRARY_ADMIN,
+          libraryId: 'lib_1',
+          publisherId: null,
+        }),
+      }),
+    );
+  });
 });

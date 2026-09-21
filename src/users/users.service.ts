@@ -6,21 +6,23 @@ import {
 } from '@nestjs/common';
 import { Prisma, Role } from '../../generated/prisma/client';
 import { paginatedMeta } from '../common/dto/pagination.dto';
-import type { PaginationQueryDto } from '../common/dto/pagination.dto';
 import {
   AuthUser,
   isLibraryRole,
   isPublisherRole,
+  isSuperAdmin,
 } from '../common/types/auth-user';
 import { hashPassword } from '../common/utils/password';
 import { toPublicUser } from '../common/utils/public-user';
 import {
   assertCanAssignRole,
+  assertLibraryAccess,
   userScopeWhere,
 } from '../common/utils/scoped-where';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { UserQueryDto } from './dto/user-query.dto';
 
 @Injectable()
 export class UsersService {
@@ -56,12 +58,13 @@ export class UsersService {
     return toPublicUser(user);
   }
 
-  async findAll(query: PaginationQueryDto, actor: AuthUser) {
+  async findAll(query: UserQueryDto, actor: AuthUser) {
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
     const where: Prisma.UserWhereInput = {
       ...userScopeWhere(actor),
       ...this.buildSearch(query),
+      ...this.libraryFilter(query.libraryId, actor),
     };
 
     const [data, total] = await this.prisma.$transaction([
@@ -152,7 +155,7 @@ export class UsersService {
     return toPublicUser(user);
   }
 
-  private buildSearch(query: PaginationQueryDto): Prisma.UserWhereInput {
+  private buildSearch(query: UserQueryDto): Prisma.UserWhereInput {
     const where: Prisma.UserWhereInput = {};
     if (query.search) {
       where.OR = [
@@ -165,6 +168,20 @@ export class UsersService {
       where.isActive = query.isActive;
     }
     return where;
+  }
+
+  private libraryFilter(
+    libraryId: string | undefined,
+    actor: AuthUser,
+  ): Prisma.UserWhereInput {
+    if (!libraryId) {
+      return {};
+    }
+    if (isSuperAdmin(actor.role)) {
+      return { libraryId };
+    }
+    assertLibraryAccess(actor, libraryId);
+    return { libraryId };
   }
 
   private validateOrgForRole(

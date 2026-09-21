@@ -16,4 +16,14 @@ export class QrService {
       color: { dark: '#0f172a', light: '#ffffff' },
     });
   }
+
+  async toBuffer(token: string): Promise<Buffer> {
+    return QRCode.toBuffer(token, {
+      type: 'png',
+      errorCorrectionLevel: 'M',
+      margin: 1,
+      width: 256,
+      color: { dark: '#0f172a', light: '#ffffff' },
+    });
+  }
 }

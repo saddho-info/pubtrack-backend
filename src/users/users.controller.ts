@@ -14,12 +14,12 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { Role } from '../../generated/prisma/client';
-import { PaginationQueryDto } from '../common/dto/pagination.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import type { AuthUser } from '../common/types/auth-user';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { UserQueryDto } from './dto/user-query.dto';
 import { UsersService } from './users.service';
 
 @ApiTags('users')
@@ -37,7 +37,7 @@ export class UsersController {
 
   @Get()
   @ApiOkResponse({ description: 'Paginated users in the caller scope' })
-  findAll(@Query() query: PaginationQueryDto, @CurrentUser() actor: AuthUser) {
+  findAll(@Query() query: UserQueryDto, @CurrentUser() actor: AuthUser) {
     return this.usersService.findAll(query, actor);
   }
 
