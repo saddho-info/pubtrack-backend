@@ -272,6 +272,13 @@ async function main() {
     actorUserId: libraryAdmin.id,
   });
 
+  const extra = await seedExtendedCatalog(prisma, {
+    publisherId: publisher.id,
+    libraryId: library.id,
+    publisherAdminId: publisherAdmin.id,
+    libraryAdminId: libraryAdmin.id,
+  });
+
   await prisma.$disconnect();
   console.log('Seeded demo users (password: ChangeMe123!)');
   console.log('  leo.a@example.org       SUPER_ADMIN');
@@ -285,6 +292,350 @@ async function main() {
   console.log('Seeded received shipment: 4 Silent Archive hardcovers at Riverside');
   console.log('Seeded inbound shipment: 3 River of Ink paperbacks awaiting receive');
   console.log('Seeded sample sale: 1 Silent Archive hardcover at Riverside');
+  console.log(
+    `Seeded extended catalog: ${extra.books} books, ${extra.editions} editions, ` +
+      `${extra.shipments} shipments (${extra.pending} awaiting receive), ${extra.sales} sales`,
+  );
+  console.log('Seeded low-stock alert: Paper Boats paperback at Riverside');
+}
+
+/**
+ * Extra titles so the portal has enough breadth to exercise search,
+ * pagination, low stock, pending receipts, and a multi-day sales history.
+ */
+const EXTRA_CATALOG = [
+  {
+    slug: 'monsoon-ledger',
+    title: 'Monsoon Ledger',
+    subtitle: 'Accounts from a flooded city',
+    authors: 'Nadia Karim',
+    description:
+      'A ledger survives the flood. The clerks who balanced it do not.',
+    category: 'Mystery',
+    editions: [
+      {
+        isbn: '9780143127741',
+        isbn10: '0143127748',
+        format: BookFormat.HARDCOVER,
+        listPriceCents: 2799,
+        pageCount: 412,
+        publicationDate: '2025-03-04',
+        printRun: 20,
+      },
+      {
+        isbn: '9780307474278',
+        isbn10: '0307474275',
+        format: BookFormat.PAPERBACK,
+        listPriceCents: 1699,
+        pageCount: 400,
+        publicationDate: '2025-11-18',
+        printRun: 30,
+      },
+    ],
+  },
+  {
+    slug: 'the-cartographers-apprentice',
+    title: "The Cartographer's Apprentice",
+    subtitle: 'Mapping the last delta',
+    authors: 'Imran Bashir',
+    description:
+      'A surveyor redraws a coastline that refuses to stay where it was drawn.',
+    category: 'Historical Fiction',
+    editions: [
+      {
+        isbn: '9780062315007',
+        isbn10: '0062315005',
+        format: BookFormat.PAPERBACK,
+        listPriceCents: 1899,
+        pageCount: 352,
+        publicationDate: '2025-06-10',
+        printRun: 25,
+      },
+    ],
+  },
+  {
+    slug: 'paper-boats',
+    title: 'Paper Boats',
+    authors: 'Sadia Noor',
+    description: 'Short poems on monsoon, migration, and the rooms between.',
+    category: 'Poetry',
+    editions: [
+      {
+        isbn: '9781501110368',
+        format: BookFormat.PAPERBACK,
+        listPriceCents: 1399,
+        pageCount: 128,
+        publicationDate: '2026-01-20',
+        printRun: 15,
+      },
+    ],
+  },
+  {
+    slug: 'delta-light',
+    title: 'Delta Light',
+    authors: 'Rafiq Anwar',
+    description: 'Three generations of a printing family on the Meghna.',
+    category: 'Literary Fiction',
+    editions: [
+      {
+        isbn: '9780316769488',
+        isbn10: '0316769487',
+        format: BookFormat.HARDCOVER,
+        listPriceCents: 2499,
+        pageCount: 296,
+        publicationDate: '2026-04-02',
+        printRun: 10,
+      },
+    ],
+  },
+] as const;
+
+/**
+ * Shipments from Northwind to Riverside. A shipment without `receipt` stays
+ * DISPATCHED so the Receiving queue has outstanding work to confirm.
+ */
+const EXTRA_SHIPMENTS = [
+  {
+    isbn: '9780143127741',
+    quantity: 8,
+    code: 'D-20260601-101',
+    idempotencyKey: 'seed-riverside-monsoon-hc',
+    notes: 'Seed shipment: Monsoon Ledger hardcovers',
+    receipt: {
+      code: 'R-20260601-101',
+      idempotencyKey: 'seed-riverside-monsoon-hc-receipt',
+      notes: 'Seed receipt: Monsoon Ledger hardcovers',
+    },
+    sales: [
+      {
+        code: 'S-20260601-101',
+        idempotencyKey: 'seed-monsoon-hc-sale-1',
+        quantity: 2,
+        daysAgo: 12,
+      },
+      {
+        code: 'S-20260601-102',
+        idempotencyKey: 'seed-monsoon-hc-sale-2',
+        quantity: 1,
+        daysAgo: 3,
+      },
+    ],
+  },
+  {
+    isbn: '9780307474278',
+    quantity: 12,
+    code: 'D-20260601-102',
+    idempotencyKey: 'seed-riverside-monsoon-pb',
+    notes: 'Seed shipment: Monsoon Ledger paperbacks',
+    receipt: {
+      code: 'R-20260601-102',
+      idempotencyKey: 'seed-riverside-monsoon-pb-receipt',
+      notes: 'Seed receipt: Monsoon Ledger paperbacks',
+    },
+    sales: [
+      {
+        code: 'S-20260601-103',
+        idempotencyKey: 'seed-monsoon-pb-sale-1',
+        quantity: 3,
+        daysAgo: 20,
+      },
+      {
+        code: 'S-20260601-104',
+        idempotencyKey: 'seed-monsoon-pb-sale-2',
+        quantity: 2,
+        daysAgo: 1,
+      },
+    ],
+  },
+  {
+    isbn: '9780062315007',
+    quantity: 10,
+    code: 'D-20260601-103',
+    idempotencyKey: 'seed-riverside-cartographer-pb',
+    notes: "Seed shipment: The Cartographer's Apprentice",
+    receipt: {
+      code: 'R-20260601-103',
+      idempotencyKey: 'seed-riverside-cartographer-pb-receipt',
+      notes: "Seed receipt: The Cartographer's Apprentice",
+    },
+    sales: [
+      {
+        code: 'S-20260601-105',
+        idempotencyKey: 'seed-cartographer-pb-sale-1',
+        quantity: 2,
+        daysAgo: 7,
+      },
+    ],
+  },
+  {
+    isbn: '9781501110368',
+    quantity: 6,
+    code: 'D-20260601-104',
+    idempotencyKey: 'seed-riverside-paper-boats-pb',
+    notes: 'Seed shipment: Paper Boats',
+    receipt: {
+      code: 'R-20260601-104',
+      idempotencyKey: 'seed-riverside-paper-boats-pb-receipt',
+      notes: 'Seed receipt: Paper Boats',
+    },
+    sales: [
+      {
+        code: 'S-20260601-106',
+        idempotencyKey: 'seed-paper-boats-pb-sale-1',
+        quantity: 1,
+        daysAgo: 5,
+      },
+    ],
+  },
+  {
+    isbn: '9780316769488',
+    quantity: 5,
+    code: 'D-20260601-105',
+    idempotencyKey: 'seed-riverside-delta-light-hc',
+    notes: 'Seed inbound Delta Light hardcovers (awaiting receive)',
+  },
+] as const;
+
+/** onHand after sales is 5, so a threshold of 6 puts this title into low stock. */
+const LOW_STOCK_ISBN = '9781501110368';
+const LOW_STOCK_THRESHOLD = 6;
+
+async function seedExtendedCatalog(
+  prisma: PrismaClient,
+  input: {
+    publisherId: string;
+    libraryId: string;
+    publisherAdminId: string;
+    libraryAdminId: string;
+  },
+) {
+  const editionIdByIsbn = new Map<string, string>();
+  let editionCount = 0;
+
+  for (const entry of EXTRA_CATALOG) {
+    const book = await prisma.book.upsert({
+      where: {
+        publisherId_slug: {
+          publisherId: input.publisherId,
+          slug: entry.slug,
+        },
+      },
+      update: {},
+      create: {
+        publisherId: input.publisherId,
+        title: entry.title,
+        subtitle: 'subtitle' in entry ? entry.subtitle : undefined,
+        authors: entry.authors,
+        description: entry.description,
+        language: 'en',
+        category: entry.category,
+        slug: entry.slug,
+      },
+    });
+
+    for (const editionSeed of entry.editions) {
+      const edition = await prisma.edition.upsert({
+        where: { isbn: editionSeed.isbn },
+        update: {},
+        create: {
+          bookId: book.id,
+          isbn: editionSeed.isbn,
+          isbn10: 'isbn10' in editionSeed ? editionSeed.isbn10 : undefined,
+          format: editionSeed.format,
+          listPriceCents: editionSeed.listPriceCents,
+          currency: 'USD',
+          pageCount: editionSeed.pageCount,
+          publicationDate: new Date(editionSeed.publicationDate),
+        },
+      });
+      editionIdByIsbn.set(editionSeed.isbn, edition.id);
+      editionCount += 1;
+
+      await seedPrintedCopies(prisma, {
+        editionId: edition.id,
+        publisherId: input.publisherId,
+        actorUserId: input.publisherAdminId,
+        quantity: editionSeed.printRun,
+      });
+    }
+  }
+
+  let pending = 0;
+  let saleCount = 0;
+
+  for (const shipment of EXTRA_SHIPMENTS) {
+    const editionId = editionIdByIsbn.get(shipment.isbn);
+    if (!editionId) {
+      continue;
+    }
+
+    await seedDispatchedShipment(prisma, {
+      publisherId: input.publisherId,
+      libraryId: input.libraryId,
+      editionId,
+      actorUserId: input.publisherAdminId,
+      quantity: shipment.quantity,
+      idempotencyKey: shipment.idempotencyKey,
+      code: shipment.code,
+      notes: shipment.notes,
+    });
+
+    if (!('receipt' in shipment)) {
+      pending += 1;
+      continue;
+    }
+
+    await seedStockReceipt(prisma, {
+      publisherId: input.publisherId,
+      libraryId: input.libraryId,
+      editionId,
+      actorUserId: input.libraryAdminId,
+      distributionKey: shipment.idempotencyKey,
+      idempotencyKey: shipment.receipt.idempotencyKey,
+      code: shipment.receipt.code,
+      notes: shipment.receipt.notes,
+    });
+
+    for (const sale of shipment.sales) {
+      await seedSale(prisma, {
+        libraryId: input.libraryId,
+        editionId,
+        actorUserId: input.libraryAdminId,
+        quantity: sale.quantity,
+        code: sale.code,
+        idempotencyKey: sale.idempotencyKey,
+        notes: 'Seed counter sale',
+        soldAt: daysAgo(sale.daysAgo),
+      });
+      saleCount += 1;
+    }
+  }
+
+  const lowStockEditionId = editionIdByIsbn.get(LOW_STOCK_ISBN);
+  if (lowStockEditionId) {
+    await prisma.inventory.updateMany({
+      where: {
+        editionId: lowStockEditionId,
+        holderType: InventoryHolderType.LIBRARY,
+        holderId: input.libraryId,
+      },
+      data: { lowStockThreshold: LOW_STOCK_THRESHOLD },
+    });
+  }
+
+  return {
+    books: EXTRA_CATALOG.length,
+    editions: editionCount,
+    shipments: EXTRA_SHIPMENTS.length,
+    pending,
+    sales: saleCount,
+  };
+}
+
+function daysAgo(days: number) {
+  const date = new Date();
+  date.setDate(date.getDate() - days);
+  return date;
 }
 
 async function seedPrintedCopies(
@@ -513,6 +864,8 @@ async function seedStockReceipt(
     actorUserId: string;
     distributionKey: string;
     idempotencyKey: string;
+    code?: string;
+    notes?: string;
   },
 ) {
   const existing = await prisma.stockReceipt.findUnique({
@@ -560,8 +913,8 @@ async function seedStockReceipt(
       distributionId: distribution.id,
       libraryId: input.libraryId,
       status: StockReceiptStatus.CONFIRMED,
-      code: 'R-20260814-001',
-      notes: 'Seed library receipt',
+      code: input.code ?? 'R-20260814-001',
+      notes: input.notes ?? 'Seed library receipt',
       actorUserId: input.actorUserId,
       confirmedAt: new Date(),
       idempotencyKey: input.idempotencyKey,
@@ -609,7 +962,7 @@ async function seedStockReceipt(
       toHolderType: InventoryHolderType.LIBRARY,
       toHolderId: input.libraryId,
       actorUserId: input.actorUserId,
-      reason: 'Seed library receipt',
+      reason: input.notes ?? 'Seed library receipt',
       refType: 'StockReceipt',
       refId: receipt.id,
     },
@@ -622,13 +975,22 @@ async function seedSale(
     libraryId: string;
     editionId: string;
     actorUserId: string;
+    quantity?: number;
+    code?: string;
+    idempotencyKey?: string;
+    notes?: string;
+    soldAt?: Date;
   },
 ) {
+  const quantity = input.quantity ?? 1;
+  const idempotencyKey =
+    input.idempotencyKey ?? 'seed-riverside-silent-hc-sale';
+
   const existing = await prisma.sale.findUnique({
     where: {
       libraryId_idempotencyKey: {
         libraryId: input.libraryId,
-        idempotencyKey: 'seed-riverside-silent-hc-sale',
+        idempotencyKey,
       },
     },
   });
@@ -636,44 +998,48 @@ async function seedSale(
     return;
   }
 
-  const copy = await prisma.bookCopy.findFirst({
+  const copies = await prisma.bookCopy.findMany({
     where: {
       editionId: input.editionId,
       libraryId: input.libraryId,
       status: CopyStatus.IN_STOCK_LIBRARY,
     },
     orderBy: { copyNumber: 'asc' },
+    take: quantity,
     include: {
       edition: { select: { listPriceCents: true, currency: true } },
     },
   });
-  if (!copy) {
+  if (copies.length === 0) {
     return;
   }
+
+  const unitPriceCents = copies[0].edition.listPriceCents;
+  const notes = input.notes ?? 'Seed counter sale';
 
   const sale = await prisma.sale.create({
     data: {
       libraryId: input.libraryId,
-      code: 'S-20260814-001',
-      currency: copy.edition.currency,
-      totalCents: copy.edition.listPriceCents,
-      notes: 'Seed counter sale',
+      code: input.code ?? 'S-20260814-001',
+      currency: copies[0].edition.currency,
+      totalCents: unitPriceCents * copies.length,
+      notes,
       actorUserId: input.actorUserId,
-      soldAt: new Date(),
-      idempotencyKey: 'seed-riverside-silent-hc-sale',
+      soldAt: input.soldAt ?? new Date(),
+      idempotencyKey,
       items: {
-        create: {
+        create: copies.map((copy) => ({
           editionId: input.editionId,
           copyId: copy.id,
           unitPriceCents: copy.edition.listPriceCents,
           quantity: 1,
-        },
+        })),
       },
     },
   });
 
-  await prisma.bookCopy.update({
-    where: { id: copy.id },
+  await prisma.bookCopy.updateMany({
+    where: { id: { in: copies.map((copy) => copy.id) } },
     data: { status: CopyStatus.SOLD },
   });
 
@@ -686,8 +1052,8 @@ async function seedSale(
       },
     },
     data: {
-      onHand: { decrement: 1 },
-      sold: { increment: 1 },
+      onHand: { decrement: copies.length },
+      sold: { increment: copies.length },
       version: { increment: 1 },
     },
   });
@@ -696,12 +1062,12 @@ async function seedSale(
     data: {
       type: MovementType.SALE,
       editionId: input.editionId,
-      copyId: copy.id,
-      quantity: 1,
+      copyId: copies.length === 1 ? copies[0].id : null,
+      quantity: copies.length,
       fromHolderType: InventoryHolderType.LIBRARY,
       fromHolderId: input.libraryId,
       actorUserId: input.actorUserId,
-      reason: 'Seed counter sale',
+      reason: notes,
       refType: 'Sale',
       refId: sale.id,
     },
