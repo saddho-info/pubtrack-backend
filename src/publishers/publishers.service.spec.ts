@@ -1,6 +1,7 @@
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import {
+  libraryAdminUser,
   publisherAdminUser,
   superAdminUser,
 } from '../common/testing/auth-user.fixture';
@@ -16,6 +17,9 @@ describe('PublishersService', () => {
       count: jest.fn(),
       findUnique: jest.fn(),
       update: jest.fn(),
+    },
+    publisherLibrary: {
+      findUnique: jest.fn(),
     },
     $transaction: jest.fn(),
   };
@@ -78,6 +82,33 @@ describe('PublishersService', () => {
     await expect(
       service.findOne('pub_other', publisherAdminUser('pub_1')),
     ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('lets a library admin read a publisher linked to their library', async () => {
+    prisma.publisher.findUnique.mockResolvedValue({ id: 'pub_1' });
+    prisma.publisherLibrary.findUnique.mockResolvedValue({ isActive: true });
+
+    await expect(
+      service.findOne('pub_1', libraryAdminUser('lib_1')),
+    ).resolves.toEqual({ id: 'pub_1' });
+  });
+
+  it('hides an unlinked publisher from a library admin', async () => {
+    prisma.publisher.findUnique.mockResolvedValue({ id: 'pub_1' });
+    prisma.publisherLibrary.findUnique.mockResolvedValue(null);
+
+    await expect(
+      service.findOne('pub_1', libraryAdminUser('lib_1')),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('hides a paused partnership from a library admin', async () => {
+    prisma.publisher.findUnique.mockResolvedValue({ id: 'pub_1' });
+    prisma.publisherLibrary.findUnique.mockResolvedValue({ isActive: false });
+
+    await expect(
+      service.findOne('pub_1', libraryAdminUser('lib_1')),
+    ).rejects.toBeInstanceOf(NotFoundException);
   });
 
   it('updates an existing publisher', async () => {

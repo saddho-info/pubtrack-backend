@@ -608,7 +608,10 @@ export class InventoryService {
   }
 
   private assertOptionalOrgFilters(user: AuthUser, query: InventoryQueryDto) {
-    if (query.publisherId) {
+    // For library callers publisherId only narrows their own holdings, which
+    // inventoryScopeWhere already pins to their library, so it is a filter
+    // rather than a claim on the publisher's warehouse.
+    if (query.publisherId && !isLibraryRole(user.role)) {
       assertPublisherAccess(user, query.publisherId);
     }
     if (query.libraryId) {

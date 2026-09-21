@@ -2,7 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '../../generated/prisma/client';
 import { paginatedMeta } from '../common/dto/pagination.dto';
 import type { PaginationQueryDto } from '../common/dto/pagination.dto';
-import { AuthUser } from '../common/types/auth-user';
+import { AuthUser, isLibraryRole } from '../common/types/auth-user';
 import { slugifyOrFallback } from '../common/utils/slugify';
 import {
   assertPublisherAccess,
@@ -66,6 +66,24 @@ export class PublishersService {
 
     if (!publisher) {
       throw new NotFoundException(`Publisher ${id} not found`);
+    }
+
+    // An unlinked publisher is indistinguishable from a missing one for a
+    // library caller, so 404 rather than leak its existence.
+    if (isLibraryRole(user.role) && user.libraryId) {
+      const link = await this.prisma.publisherLibrary.findUnique({
+        where: {
+          publisherId_libraryId: {
+            publisherId: publisher.id,
+            libraryId: user.libraryId,
+          },
+        },
+        select: { isActive: true },
+      });
+      if (!link?.isActive) {
+        throw new NotFoundException(`Publisher ${id} not found`);
+      }
+      return publisher;
     }
 
     assertPublisherAccess(user, publisher.id);

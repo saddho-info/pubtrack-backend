@@ -45,6 +45,12 @@ describe('scoped-where', () => {
     expect(userScopeWhere(user)).toEqual({ libraryId: 'lib_1' });
   });
 
+  it('shows library users the publishers linked to their library', () => {
+    expect(publisherScopeWhere(libraryAdminUser('lib_1'))).toEqual({
+      libraryLinks: { some: { libraryId: 'lib_1', isActive: true } },
+    });
+  });
+
   it('blocks cross-tenant publisher access', () => {
     expect(() =>
       assertPublisherAccess(publisherAdminUser('pub_1'), 'pub_2'),

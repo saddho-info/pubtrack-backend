@@ -20,6 +20,13 @@ export function publisherScopeWhere(
   if (isPublisherRole(user.role) && user.publisherId) {
     return { id: user.publisherId };
   }
+  // Library users see the publishers allowed to distribute to them, not the
+  // organization they belong to.
+  if (isLibraryRole(user.role) && user.libraryId) {
+    return {
+      libraryLinks: { some: { libraryId: user.libraryId, isActive: true } },
+    };
+  }
   return { id: '__none__' };
 }
 

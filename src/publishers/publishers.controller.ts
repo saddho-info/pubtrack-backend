@@ -24,6 +24,14 @@ import { CreatePublisherDto } from './dto/create-publisher.dto';
 import { UpdatePublisherDto } from './dto/update-publisher.dto';
 import { PublishersService } from './publishers.service';
 
+const READ_ROLES = [
+  Role.SUPER_ADMIN,
+  Role.PUBLISHER_ADMIN,
+  Role.PUBLISHER_STAFF,
+  Role.LIBRARY_ADMIN,
+  Role.LIBRARY_STAFF,
+] as const;
+
 @ApiTags('publishers')
 @ApiBearerAuth()
 @Controller('publishers')
@@ -38,15 +46,16 @@ export class PublishersController {
   }
 
   @Get()
-  @Roles(Role.SUPER_ADMIN, Role.PUBLISHER_ADMIN, Role.PUBLISHER_STAFF)
+  @Roles(...READ_ROLES)
   @ApiOkResponse({ description: 'Paginated publishers' })
   findAll(@Query() query: PaginationQueryDto, @CurrentUser() user: AuthUser) {
     return this.publishersService.findAll(query, user);
   }
 
+  // Scoping happens in the service: library callers are allowed through by role
+  // but must hold a PublisherLibrary link, which PublisherScopeGuard cannot see.
   @Get(':id')
-  @Roles(Role.SUPER_ADMIN, Role.PUBLISHER_ADMIN, Role.PUBLISHER_STAFF)
-  @UseGuards(PublisherScopeGuard)
+  @Roles(...READ_ROLES)
   @ApiOkResponse({ description: 'Publisher by id' })
   findOne(@Param('id') id: string, @CurrentUser() user: AuthUser) {
     return this.publishersService.findOne(id, user);
