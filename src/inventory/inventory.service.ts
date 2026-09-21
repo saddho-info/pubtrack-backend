@@ -261,7 +261,11 @@ export class InventoryService {
     const sold = rows.reduce((sum, row) => sum + row.sold, 0);
     const returned = rows.reduce((sum, row) => sum + row.returned, 0);
     const lost = rows.reduce((sum, row) => sum + row.lost, 0);
-    const lowStockCount = warehouse.filter((row) =>
+    // Library users hold no warehouse rows, so count against the shelves they
+    // actually own. Mirrors the branching in lowStockEditionIds.
+    const lowStockRows =
+      isLibraryRole(user.role) && user.libraryId ? libraries : warehouse;
+    const lowStockCount = lowStockRows.filter((row) =>
       isLowStock(row.onHand, row.lowStockThreshold),
     ).length;
 
@@ -455,9 +459,14 @@ export class InventoryService {
   ): Prisma.EditionWhereInput {
     this.assertOptionalOrgFilters(user, query);
 
-    const where: Prisma.EditionWhereInput = {
-      ...editionScopeWhere(user),
-    };
+    // Library users are scoped by their inventory holdings below. Book-level
+    // scoping excludes them from every publisher's catalog, so applying both
+    // yields an unsatisfiable filter.
+    const scopedByHoldings = isLibraryRole(user.role) && Boolean(user.libraryId);
+
+    const where: Prisma.EditionWhereInput = scopedByHoldings
+      ? {}
+      : { ...editionScopeWhere(user) };
 
     if (query.editionId) {
       where.id = query.editionId;
