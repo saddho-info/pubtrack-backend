@@ -19,6 +19,7 @@ import { Roles } from '../common/decorators/roles.decorator';
 import type { AuthUser } from '../common/types/auth-user';
 import { CreateEditionDto } from './dto/create-edition.dto';
 import { EditionQueryDto } from './dto/edition-query.dto';
+import { LibraryPerformanceResponseDto } from './dto/library-performance-response.dto';
 import { UpdateEditionDto } from './dto/update-edition.dto';
 import { EditionsService } from './editions.service';
 
@@ -45,6 +46,18 @@ export class EditionsController {
   @ApiOkResponse({ description: 'Paginated editions' })
   findAll(@Query() query: EditionQueryDto, @CurrentUser() user: AuthUser) {
     return this.editionsService.findAll(query, user);
+  }
+
+  @Get(':editionId/library-performance')
+  @ApiOkResponse({
+    description: 'Library performance for one edition',
+    type: LibraryPerformanceResponseDto,
+  })
+  libraryPerformance(
+    @Param('editionId') editionId: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.editionsService.getLibraryPerformance(editionId, user);
   }
 
   @Get(':id')

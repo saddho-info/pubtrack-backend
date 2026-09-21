@@ -107,6 +107,12 @@ describe('AppController (e2e)', () => {
       .expect(200)
       .expect({ status: 'ok', service: 'pubtrack-backend' });
   });
+
+  it('rejects unauthenticated library publisher performance requests', () => {
+    return request(app.getHttpServer())
+      .get('/api/v1/libraries/library-id/publisher-performance')
+      .expect(401);
+  });
 });
 
 describe('Auth and tenant isolation (e2e)', () => {
