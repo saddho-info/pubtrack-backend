@@ -16,6 +16,23 @@ import { hashPassword } from '../src/common/utils/password';
 import { generateQrToken } from '../src/common/utils/qr-token';
 
 const DEMO_PASSWORD = 'ChangeMe123!';
+const DEFAULT_SYSTEM_SETTINGS = [
+  {
+    key: 'platform.name',
+    value: 'PubTrack',
+    description: 'Display name used across PubTrack applications.',
+  },
+  {
+    key: 'platform.defaultCurrency',
+    value: 'USD',
+    description: 'Default ISO 4217 currency code for new organizations.',
+  },
+  {
+    key: 'platform.maintenanceMode',
+    value: false,
+    description: 'Whether platform-wide maintenance mode is enabled.',
+  },
+] as const;
 
 async function main() {
   const connectionString = process.env.DATABASE_URL;
@@ -279,24 +296,45 @@ async function main() {
     libraryAdminId: libraryAdmin.id,
   });
 
+  await seedSystemSettings(prisma);
+
   await prisma.$disconnect();
   console.log('Seeded demo users (password: ChangeMe123!)');
   console.log('  leo.a@example.org       SUPER_ADMIN');
   console.log('  quinn.m@example.net   PUBLISHER_ADMIN');
   console.log('  walt.e@example.net     LIBRARY_ADMIN');
   console.log('  wendy.h@example.net    LIBRARY_STAFF');
-  console.log('Seeded Northwind Press catalog: The Silent Archive, River of Ink');
+  console.log(
+    'Seeded Northwind Press catalog: The Silent Archive, River of Ink',
+  );
   console.log('Seeded warehouse copies: 12 + 8 Silent Archive, 6 River of Ink');
   console.log('Linked Northwind Press → Riverside Public Library');
-  console.log('Seeded unlinked library: Harbor Community (slug harbor-community)');
-  console.log('Seeded received shipment: 4 Silent Archive hardcovers at Riverside');
-  console.log('Seeded inbound shipment: 3 River of Ink paperbacks awaiting receive');
+  console.log(
+    'Seeded unlinked library: Harbor Community (slug harbor-community)',
+  );
+  console.log(
+    'Seeded received shipment: 4 Silent Archive hardcovers at Riverside',
+  );
+  console.log(
+    'Seeded inbound shipment: 3 River of Ink paperbacks awaiting receive',
+  );
   console.log('Seeded sample sale: 1 Silent Archive hardcover at Riverside');
   console.log(
     `Seeded extended catalog: ${extra.books} books, ${extra.editions} editions, ` +
       `${extra.shipments} shipments (${extra.pending} awaiting receive), ${extra.sales} sales`,
   );
   console.log('Seeded low-stock alert: Paper Boats paperback at Riverside');
+  console.log('Seeded default system settings');
+}
+
+async function seedSystemSettings(prisma: PrismaClient) {
+  for (const setting of DEFAULT_SYSTEM_SETTINGS) {
+    await prisma.systemSetting.upsert({
+      where: { key: setting.key },
+      update: {},
+      create: setting,
+    });
+  }
 }
 
 /**

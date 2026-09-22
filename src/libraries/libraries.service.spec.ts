@@ -484,10 +484,7 @@ describe('LibrariesService', () => {
 
     it('returns zero counts and empty revenue for no activity', async () => {
       await expect(
-        service.getPublisherPerformance(
-          'lib_1',
-          publisherAdminUser('pub_1'),
-        ),
+        service.getPublisherPerformance('lib_1', publisherAdminUser('pub_1')),
       ).resolves.toEqual({
         library: performanceLibrary,
         summary: {

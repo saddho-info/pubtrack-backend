@@ -37,8 +37,7 @@ export class NotificationsProcessor extends WorkerHost {
     const itemCount = data.titles.length;
     const title = `Sale ${data.code}`;
     const firstTitle = data.titles[0] ?? 'a title';
-    const suffix =
-      itemCount > 1 ? ` and ${itemCount - 1} more` : '';
+    const suffix = itemCount > 1 ? ` and ${itemCount - 1} more` : '';
     const body = `${data.libraryName} sold ${firstTitle}${suffix}.`;
 
     const notification = await this.prisma.notification.upsert({
@@ -90,9 +89,7 @@ export class NotificationsProcessor extends WorkerHost {
       ]);
     if (getApps().length === 0) {
       initializeApp({
-        credential: cert(
-          JSON.parse(credentials) as Parameters<typeof cert>[0],
-        ),
+        credential: cert(JSON.parse(credentials) as Parameters<typeof cert>[0]),
       });
     }
 

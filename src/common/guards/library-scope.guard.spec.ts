@@ -41,7 +41,9 @@ describe('LibraryScopeGuard', () => {
 
   it('rejects cross-library access', () => {
     expect(() =>
-      guard.canActivate(contextWith(libraryAdminUser('lib_1'), { id: 'lib_2' })),
+      guard.canActivate(
+        contextWith(libraryAdminUser('lib_1'), { id: 'lib_2' }),
+      ),
     ).toThrow(ForbiddenException);
   });
 });

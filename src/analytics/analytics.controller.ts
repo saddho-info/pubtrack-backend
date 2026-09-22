@@ -14,6 +14,16 @@ import { OverviewQueryDto } from './dto/overview-query.dto';
 export class AnalyticsController {
   constructor(private readonly analyticsService: AnalyticsService) {}
 
+  @Get('system-overview')
+  @Roles(Role.SUPER_ADMIN)
+  @ApiOkResponse({
+    description:
+      'Platform-wide organization, user, sales, inventory, and audit summary.',
+  })
+  systemOverview() {
+    return this.analyticsService.getSystemOverview();
+  }
+
   @Get('overview')
   @ApiOkResponse({
     description:

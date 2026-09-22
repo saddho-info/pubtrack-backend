@@ -27,8 +27,8 @@ describe('NotificationsService', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
-    prisma.$transaction.mockImplementation(
-      async (ops: Promise<unknown>[]) => Promise.all(ops),
+    prisma.$transaction.mockImplementation(async (ops: Promise<unknown>[]) =>
+      Promise.all(ops),
     );
     const module: TestingModule = await Test.createTestingModule({
       providers: [

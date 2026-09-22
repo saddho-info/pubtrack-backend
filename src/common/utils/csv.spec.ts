@@ -8,7 +8,13 @@ describe('csv utils', () => {
   });
 
   it('serializes a header + rows document', () => {
-    const csv = toCsv(['code', 'total'], [['S-1', 12.5], ['S-2', null]]);
+    const csv = toCsv(
+      ['code', 'total'],
+      [
+        ['S-1', 12.5],
+        ['S-2', null],
+      ],
+    );
     expect(csv).toBe('code,total\r\nS-1,12.5\r\nS-2,\r\n');
   });
 });

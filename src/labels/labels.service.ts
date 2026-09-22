@@ -1,10 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import PDFDocument from 'pdfkit';
 import { CopyStatus } from '../../generated/prisma/client';
-import {
-  CopiesService,
-  type LabelCopy,
-} from '../copies/copies.service';
+import { CopiesService, type LabelCopy } from '../copies/copies.service';
 import { QrService } from '../copies/qr.service';
 import type { AuthUser } from '../common/types/auth-user';
 import { LabelQueryDto } from './dto/label-query.dto';
@@ -39,7 +36,9 @@ export class LabelsService {
     );
 
     if (copies.length === 0) {
-      throw new NotFoundException('No copies match the requested label filters');
+      throw new NotFoundException(
+        'No copies match the requested label filters',
+      );
     }
 
     const qrImages = await Promise.all(

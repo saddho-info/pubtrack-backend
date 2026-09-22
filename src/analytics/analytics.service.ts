@@ -37,6 +37,101 @@ const ACTIVITY_LIMIT = 15;
 export class AnalyticsService {
   constructor(private readonly prisma: PrismaService) {}
 
+  async getSystemOverview() {
+    const now = new Date();
+    const from = new Date(now);
+    from.setUTCDate(from.getUTCDate() - 30);
+
+    const [
+      publisherTotal,
+      publisherActive,
+      libraryTotal,
+      libraryActive,
+      userTotal,
+      userActive,
+      usersByRole,
+      salesByCurrency,
+      saleCount,
+      inventory,
+      recentAuditActivity,
+    ] = await Promise.all([
+      this.prisma.publisher.count(),
+      this.prisma.publisher.count({ where: { isActive: true } }),
+      this.prisma.library.count(),
+      this.prisma.library.count({ where: { isActive: true } }),
+      this.prisma.user.count(),
+      this.prisma.user.count({ where: { isActive: true } }),
+      this.prisma.user.groupBy({
+        by: ['role'],
+        _count: { _all: true },
+        orderBy: { role: 'asc' },
+      }),
+      this.prisma.sale.groupBy({
+        by: ['currency'],
+        where: { soldAt: { gte: from, lte: now } },
+        _sum: { totalCents: true },
+        orderBy: { currency: 'asc' },
+      }),
+      this.prisma.sale.count({
+        where: { soldAt: { gte: from, lte: now } },
+      }),
+      this.prisma.inventory.aggregate({
+        _sum: {
+          onHand: true,
+          inTransit: true,
+          sold: true,
+          returned: true,
+          lost: true,
+        },
+      }),
+      this.prisma.auditLog.findMany({
+        orderBy: { createdAt: 'desc' },
+        take: ACTIVITY_LIMIT,
+        include: {
+          actor: {
+            select: {
+              id: true,
+              email: true,
+              firstName: true,
+              lastName: true,
+              role: true,
+            },
+          },
+        },
+      }),
+    ]);
+
+    return {
+      generatedAt: now.toISOString(),
+      publishers: { total: publisherTotal, active: publisherActive },
+      libraries: { total: libraryTotal, active: libraryActive },
+      users: {
+        total: userTotal,
+        active: userActive,
+        byRole: Object.fromEntries(
+          usersByRole.map((row) => [row.role, row._count._all]),
+        ),
+      },
+      salesLast30Days: {
+        from: from.toISOString(),
+        to: now.toISOString(),
+        count: saleCount,
+        totalsByCurrency: salesByCurrency.map((row) => ({
+          currency: row.currency,
+          totalCents: row._sum.totalCents ?? 0,
+        })),
+      },
+      inventory: {
+        onHand: inventory._sum.onHand ?? 0,
+        inTransit: inventory._sum.inTransit ?? 0,
+        sold: inventory._sum.sold ?? 0,
+        returned: inventory._sum.returned ?? 0,
+        lost: inventory._sum.lost ?? 0,
+      },
+      recentAuditActivity,
+    };
+  }
+
   async getOverview(
     user: AuthUser,
     query: OverviewQueryDto,

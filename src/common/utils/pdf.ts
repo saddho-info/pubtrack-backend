@@ -4,7 +4,10 @@
  */
 
 function escapePdfText(value: string): string {
-  return value.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
+  return value
+    .replace(/\\/g, '\\\\')
+    .replace(/\(/g, '\\(')
+    .replace(/\)/g, '\\)');
 }
 
 export function toSimplePdf(title: string, lines: string[]): Buffer {
@@ -24,9 +27,7 @@ export function toSimplePdf(title: string, lines: string[]): Buffer {
     contentLines.push('0 -12 Td');
   }
   if (lines.length > maxLines) {
-    contentLines.push(
-      `(… truncated ${lines.length - maxLines} more lines) Tj`,
-    );
+    contentLines.push(`(… truncated ${lines.length - maxLines} more lines) Tj`);
   }
   contentLines.push('ET');
 

@@ -16,15 +16,18 @@ import { AnalyticsService } from './analytics.service';
 describe('AnalyticsService', () => {
   let service: AnalyticsService;
   const prisma = {
-    inventory: { findMany: jest.fn() },
+    publisher: { count: jest.fn() },
+    library: { count: jest.fn(), findMany: jest.fn() },
+    user: { count: jest.fn(), groupBy: jest.fn() },
+    inventory: { findMany: jest.fn(), aggregate: jest.fn() },
     saleItem: {
       aggregate: jest.fn(),
       groupBy: jest.fn(),
     },
     edition: { findMany: jest.fn() },
-    sale: { findMany: jest.fn() },
+    sale: { findMany: jest.fn(), groupBy: jest.fn(), count: jest.fn() },
     inventoryMovement: { findMany: jest.fn() },
-    library: { findMany: jest.fn() },
+    auditLog: { findMany: jest.fn() },
     $queryRaw: jest.fn(),
   };
 
@@ -74,6 +77,38 @@ describe('AnalyticsService', () => {
         where: { edition: { book: { publisherId: 'pub_1' } } },
       }),
     );
+  });
+
+  it('returns a platform-wide system overview', async () => {
+    prisma.publisher.count.mockResolvedValueOnce(4).mockResolvedValueOnce(3);
+    prisma.library.count.mockResolvedValueOnce(8).mockResolvedValueOnce(7);
+    prisma.user.count.mockResolvedValueOnce(20).mockResolvedValueOnce(18);
+    prisma.user.groupBy.mockResolvedValue([
+      { role: 'SUPER_ADMIN', _count: { _all: 2 } },
+      { role: 'LIBRARY_ADMIN', _count: { _all: 5 } },
+    ]);
+    prisma.sale.groupBy.mockResolvedValue([
+      { currency: 'USD', _sum: { totalCents: 12500 } },
+    ]);
+    prisma.sale.count.mockResolvedValue(9);
+    prisma.inventory.aggregate.mockResolvedValue({
+      _sum: { onHand: 100, inTransit: 10, sold: 40, returned: 2, lost: 1 },
+    });
+    prisma.auditLog.findMany.mockResolvedValue([]);
+
+    const result = await service.getSystemOverview();
+
+    expect(result.publishers).toEqual({ total: 4, active: 3 });
+    expect(result.libraries).toEqual({ total: 8, active: 7 });
+    expect(result.users.byRole).toEqual({
+      SUPER_ADMIN: 2,
+      LIBRARY_ADMIN: 5,
+    });
+    expect(result.salesLast30Days).toMatchObject({
+      count: 9,
+      totalsByCurrency: [{ currency: 'USD', totalCents: 12500 }],
+    });
+    expect(result.inventory.onHand).toBe(100);
   });
 
   it('aggregates inventory KPIs, rankings, low stock, and activity', async () => {

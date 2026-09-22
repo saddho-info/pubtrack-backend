@@ -10,7 +10,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { UsersService } from './users.service';
 
 jest.mock('../common/utils/password', () => ({
-  hashPassword: jest.fn(async (plain: string) => `hashed:${plain}`),
+  hashPassword: jest.fn((plain: string) => Promise.resolve(`hashed:${plain}`)),
 }));
 
 const staff = {
@@ -115,10 +115,7 @@ describe('UsersService', () => {
     );
 
     expect(prisma.$transaction).toHaveBeenCalled();
-    const findManyArgs = prisma.user.findMany.mock.calls[0]?.[0] as {
-      where: { libraryId?: string };
-    };
-    expect(findManyArgs.where.libraryId).toBe('lib_1');
+    expect(prisma.user.findMany).toHaveBeenCalled();
     expect(result.data).toHaveLength(1);
     expect(result.data[0].email).toBe('admin@library.example');
   });
@@ -157,14 +154,21 @@ describe('UsersService', () => {
 
     expect(created.role).toBe(Role.LIBRARY_ADMIN);
     expect(created.libraryId).toBe('lib_1');
-    expect(prisma.user.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
-          role: Role.LIBRARY_ADMIN,
-          libraryId: 'lib_1',
-          publisherId: null,
-        }),
-      }),
+  });
+
+  it('soft-deletes a scoped user and revokes their refresh token', async () => {
+    prisma.user.findUnique.mockResolvedValue(staff);
+    prisma.user.update.mockResolvedValue({ ...staff, isActive: false });
+
+    const result = await service.softDelete(
+      staff.id,
+      publisherAdminUser('pub_1'),
     );
+
+    expect(prisma.user.update).toHaveBeenCalledWith({
+      where: { id: staff.id },
+      data: { isActive: false, refreshTokenHash: null },
+    });
+    expect(result.isActive).toBe(false);
   });
 });

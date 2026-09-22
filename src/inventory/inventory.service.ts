@@ -462,7 +462,8 @@ export class InventoryService {
     // Library users are scoped by their inventory holdings below. Book-level
     // scoping excludes them from every publisher's catalog, so applying both
     // yields an unsatisfiable filter.
-    const scopedByHoldings = isLibraryRole(user.role) && Boolean(user.libraryId);
+    const scopedByHoldings =
+      isLibraryRole(user.role) && Boolean(user.libraryId);
 
     const where: Prisma.EditionWhereInput = scopedByHoldings
       ? {}

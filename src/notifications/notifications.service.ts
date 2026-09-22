@@ -140,5 +140,4 @@ export class NotificationsService {
     }
     return { userId: user.id };
   }
-
 }

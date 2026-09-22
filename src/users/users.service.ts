@@ -64,6 +64,7 @@ export class UsersService {
     const where: Prisma.UserWhereInput = {
       ...userScopeWhere(actor),
       ...this.buildSearch(query),
+      ...this.publisherFilter(query.publisherId, actor),
       ...this.libraryFilter(query.libraryId, actor),
     };
 
@@ -155,6 +156,22 @@ export class UsersService {
     return toPublicUser(user);
   }
 
+  async softDelete(id: string, actor: AuthUser) {
+    const existing = await this.prisma.user.findUnique({ where: { id } });
+    if (!existing) {
+      throw new NotFoundException(`User ${id} not found`);
+    }
+    if (!this.canManageOrg(actor, existing.publisherId, existing.libraryId)) {
+      throw new ForbiddenException('Cannot deactivate this user');
+    }
+
+    const user = await this.prisma.user.update({
+      where: { id },
+      data: { isActive: false, refreshTokenHash: null },
+    });
+    return toPublicUser(user);
+  }
+
   private buildSearch(query: UserQueryDto): Prisma.UserWhereInput {
     const where: Prisma.UserWhereInput = {};
     if (query.search) {
@@ -167,7 +184,26 @@ export class UsersService {
     if (query.isActive !== undefined) {
       where.isActive = query.isActive;
     }
+    if (query.role) {
+      where.role = query.role;
+    }
     return where;
+  }
+
+  private publisherFilter(
+    publisherId: string | undefined,
+    actor: AuthUser,
+  ): Prisma.UserWhereInput {
+    if (!publisherId) {
+      return {};
+    }
+    if (isSuperAdmin(actor.role)) {
+      return { publisherId };
+    }
+    if (isPublisherRole(actor.role) && actor.publisherId === publisherId) {
+      return { publisherId };
+    }
+    throw new ForbiddenException('Cannot access another publisher');
   }
 
   private libraryFilter(

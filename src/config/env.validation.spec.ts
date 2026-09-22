@@ -25,9 +25,9 @@ describe('validateEnv', () => {
   });
 
   it('requires CORS_ORIGINS in production', () => {
-    expect(() =>
-      validateEnv({ ...base, NODE_ENV: 'production' }),
-    ).toThrow(/CORS_ORIGINS is required in production/);
+    expect(() => validateEnv({ ...base, NODE_ENV: 'production' })).toThrow(
+      /CORS_ORIGINS is required in production/,
+    );
   });
 
   it('accepts CORS_ORIGINS in production', () => {

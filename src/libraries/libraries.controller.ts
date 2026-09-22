@@ -41,10 +41,7 @@ const READ_ROLES = [
 ] as const;
 
 const MANAGE_ROLES = [Role.SUPER_ADMIN, Role.PUBLISHER_ADMIN] as const;
-const PUBLISHER_ROLES = [
-  Role.PUBLISHER_ADMIN,
-  Role.PUBLISHER_STAFF,
-] as const;
+const PUBLISHER_ROLES = [Role.PUBLISHER_ADMIN, Role.PUBLISHER_STAFF] as const;
 
 @ApiTags('libraries')
 @ApiBearerAuth()

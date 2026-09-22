@@ -1,7 +1,10 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
   Patch,
   Post,
@@ -55,5 +58,15 @@ export class UsersController {
     @CurrentUser() actor: AuthUser,
   ) {
     return this.usersService.update(id, dto, actor);
+  }
+
+  @Delete(':id')
+  @Roles(Role.SUPER_ADMIN, Role.PUBLISHER_ADMIN, Role.LIBRARY_ADMIN)
+  @HttpCode(HttpStatus.OK)
+  @ApiOkResponse({
+    description: 'User deactivated and refresh token revoked',
+  })
+  softDelete(@Param('id') id: string, @CurrentUser() actor: AuthUser) {
+    return this.usersService.softDelete(id, actor);
   }
 }

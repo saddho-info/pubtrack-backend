@@ -99,6 +99,11 @@ enum NotificationType {
   SYNC_FAILED
 }
 
+enum FeatureFlagScope {
+  PUBLISHER
+  LIBRARY
+}
+
 model Publisher {
   id        String   @id @default(cuid())
   name      String
@@ -110,13 +115,14 @@ model Publisher {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  users         User[]
-  books         Book[]
-  copies        BookCopy[]
-  copyBatches   CopyGenerationBatch[]
-  libraryLinks  PublisherLibrary[]
-  distributions Distribution[]
-  notifications Notification[]
+  users                User[]
+  books                Book[]
+  copies               BookCopy[]
+  copyBatches          CopyGenerationBatch[]
+  libraryLinks         PublisherLibrary[]
+  distributions        Distribution[]
+  notifications        Notification[]
+  featureFlagOverrides FeatureFlagOverride[]
 }
 
 model Library {
@@ -130,14 +136,15 @@ model Library {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  users          User[]
-  copies         BookCopy[]
-  publisherLinks PublisherLibrary[]
-  distributions  Distribution[]
-  sales            Sale[]
-  stockReceipts    StockReceipt[]
-  syncTransactions SyncTransaction[]
-  notifications    Notification[]
+  users                User[]
+  copies               BookCopy[]
+  publisherLinks       PublisherLibrary[]
+  distributions        Distribution[]
+  sales                Sale[]
+  stockReceipts        StockReceipt[]
+  syncTransactions     SyncTransaction[]
+  notifications        Notification[]
+  featureFlagOverrides FeatureFlagOverride[]
 }
 
 /// Partnership: which libraries a publisher may distribute to.
@@ -231,7 +238,7 @@ model Edition {
   createdAt       DateTime   @default(now())
   updatedAt       DateTime   @updatedAt
 
-  book              Book                   @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  book              Book                  @relation(fields: [bookId], references: [id], onDelete: Cascade)
   copies            BookCopy[]
   inventory         Inventory[]
   movements         InventoryMovement[]
@@ -255,12 +262,12 @@ model BookCopy {
   createdAt          DateTime   @default(now())
   updatedAt          DateTime   @updatedAt
 
-  edition          Edition           @relation(fields: [editionId], references: [id], onDelete: Restrict)
-  publisher        Publisher         @relation(fields: [publisherId], references: [id], onDelete: Restrict)
-  library          Library?          @relation(fields: [libraryId], references: [id], onDelete: Restrict)
-  qrCode           QrCode?
-  movements        InventoryMovement[]
-  distributionItem  DistributionItem?  @relation(fields: [distributionItemId], references: [id], onDelete: SetNull)
+  edition           Edition             @relation(fields: [editionId], references: [id], onDelete: Restrict)
+  publisher         Publisher           @relation(fields: [publisherId], references: [id], onDelete: Restrict)
+  library           Library?            @relation(fields: [libraryId], references: [id], onDelete: Restrict)
+  qrCode            QrCode?
+  movements         InventoryMovement[]
+  distributionItem  DistributionItem?   @relation(fields: [distributionItemId], references: [id], onDelete: SetNull)
   saleItem          SaleItem?
   stockReceiptItems StockReceiptItem[]
 
@@ -310,7 +317,7 @@ model Inventory {
 
 /// Append-only inventory ledger. Aggregates are a cache; this table is the truth.
 model InventoryMovement {
-  id             String                @id @default(cuid())
+  id             String               @id @default(cuid())
   type           MovementType
   editionId      String
   copyId         String?
@@ -323,7 +330,7 @@ model InventoryMovement {
   reason         String?
   refType        String?
   refId          String?
-  createdAt      DateTime              @default(now())
+  createdAt      DateTime             @default(now())
 
   edition Edition   @relation(fields: [editionId], references: [id], onDelete: Restrict)
   copy    BookCopy? @relation(fields: [copyId], references: [id], onDelete: SetNull)
@@ -376,8 +383,8 @@ model Distribution {
   createdAt      DateTime           @default(now())
   updatedAt      DateTime           @updatedAt
 
-  publisher Publisher          @relation(fields: [publisherId], references: [id], onDelete: Restrict)
-  library   Library            @relation(fields: [libraryId], references: [id], onDelete: Restrict)
+  publisher     Publisher          @relation(fields: [publisherId], references: [id], onDelete: Restrict)
+  library       Library            @relation(fields: [libraryId], references: [id], onDelete: Restrict)
   actor         User               @relation(fields: [actorUserId], references: [id], onDelete: Restrict)
   items         DistributionItem[]
   stockReceipts StockReceipt[]
@@ -577,4 +584,46 @@ model AuditLog {
   @@index([entityType, entityId])
   @@index([actorUserId, createdAt])
   @@index([createdAt])
+}
+
+model FeatureFlag {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  name        String
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  overrides FeatureFlagOverride[]
+
+  @@index([isActive])
+}
+
+model FeatureFlagOverride {
+  id            String           @id @default(cuid())
+  featureFlagId String
+  scope         FeatureFlagScope
+  publisherId   String?
+  libraryId     String?
+  enabled       Boolean
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  featureFlag FeatureFlag @relation(fields: [featureFlagId], references: [id], onDelete: Cascade)
+  publisher   Publisher?  @relation(fields: [publisherId], references: [id], onDelete: Cascade)
+  library     Library?    @relation(fields: [libraryId], references: [id], onDelete: Cascade)
+
+  @@index([featureFlagId, scope])
+  @@index([publisherId])
+  @@index([libraryId])
+}
+
+model SystemSetting {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  value       Json
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
