@@ -315,6 +315,59 @@ describe('Auth and tenant isolation (e2e)', () => {
       .expect(401);
   });
 
+  it('keeps a second session when the first refreshes or logs out', async () => {
+    const credentials = {
+      email: `sa-${suffix}@pubtrack.test`,
+      password: 'ChangeMe123!',
+    };
+
+    const firstLogin = await request(app.getHttpServer())
+      .post('/api/v1/auth/login')
+      .send(credentials)
+      .expect(200);
+    const secondLogin = await request(app.getHttpServer())
+      .post('/api/v1/auth/login')
+      .send(credentials)
+      .expect(200);
+
+    const first = firstLogin.body as AuthResponse;
+    const second = secondLogin.body as AuthResponse;
+
+    const rotatedFirst = await request(app.getHttpServer())
+      .post('/api/v1/auth/refresh')
+      .send({ refreshToken: first.refreshToken })
+      .expect(200);
+
+    const stillSecond = await request(app.getHttpServer())
+      .post('/api/v1/auth/refresh')
+      .send({ refreshToken: second.refreshToken })
+      .expect(200);
+
+    expect((rotatedFirst.body as AuthResponse).refreshToken).not.toBe(
+      first.refreshToken,
+    );
+    expect((stillSecond.body as AuthResponse).refreshToken).toBeTruthy();
+
+    await request(app.getHttpServer())
+      .post('/api/v1/auth/logout')
+      .send({ refreshToken: (rotatedFirst.body as AuthResponse).refreshToken })
+      .expect(204);
+
+    await request(app.getHttpServer())
+      .post('/api/v1/auth/refresh')
+      .send({
+        refreshToken: (rotatedFirst.body as AuthResponse).refreshToken,
+      })
+      .expect(401);
+
+    await request(app.getHttpServer())
+      .post('/api/v1/auth/refresh')
+      .send({
+        refreshToken: (stillSecond.body as AuthResponse).refreshToken,
+      })
+      .expect(200);
+  });
+
   it('requires auth for publisher writes', async () => {
     await request(app.getHttpServer())
       .post('/api/v1/publishers')

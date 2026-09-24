@@ -191,9 +191,30 @@ model User {
   deviceTokens       DeviceToken[]
   notifications      Notification[]
   auditLogs          AuditLog[]
+  refreshSessions    RefreshSession[]
 
   @@index([publisherId])
   @@index([libraryId])
+}
+
+/// One rotatable refresh token per device / browser. Reuse of a rotated
+/// token revokes only this session chain, not every login for the user.
+model RefreshSession {
+  id           String    @id @default(cuid())
+  userId       String
+  tokenHash    String    @unique
+  expiresAt    DateTime
+  revokedAt    DateTime?
+  replacedById String?   @unique
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  user       User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  replacedBy RefreshSession?  @relation("RefreshSessionRotation", fields: [replacedById], references: [id], onDelete: SetNull)
+  replaces   RefreshSession?  @relation("RefreshSessionRotation")
+
+  @@index([userId])
+  @@index([userId, revokedAt])
 }
 
 /// A publisher's title (work). Physical units are tracked per Edition.

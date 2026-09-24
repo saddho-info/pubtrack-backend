@@ -6,4 +6,6 @@ export type JwtPayload = {
   role: Role;
   publisherId: string | null;
   libraryId: string | null;
+  sid?: string;
+  jti?: string;
 };

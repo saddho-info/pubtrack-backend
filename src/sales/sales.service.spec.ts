@@ -220,6 +220,112 @@ describe('SalesService', () => {
     );
   });
 
+  it('sells the requested quantity and reduces stock for each copy', async () => {
+    prisma.sale.findUnique.mockResolvedValue(null);
+    prisma.library.findUnique.mockResolvedValue(library);
+    prisma.sale.findFirst.mockResolvedValue(null);
+    const locked = (id: string) => ({
+      id,
+      status: CopyStatus.IN_STOCK_LIBRARY,
+      editionId: 'ed_1',
+      publisherId: 'pub_1',
+      libraryId: 'lib_1',
+      listPriceCents: 2499,
+      currency: 'USD',
+    });
+    prisma.$queryRaw
+      .mockResolvedValueOnce([locked('copy_1')])
+      .mockResolvedValueOnce([locked('copy_2'), locked('copy_3')]);
+    prisma.sale.create.mockResolvedValue(
+      saleRow({
+        totalCents: 7497,
+        items: ['copy_1', 'copy_2', 'copy_3'].map((id, index) => ({
+          id: `si_${index}`,
+          saleId: 'sale_1',
+          editionId: 'ed_1',
+          copyId: id,
+          unitPriceCents: 2499,
+          quantity: 1,
+          createdAt: new Date('2026-08-14'),
+          edition,
+          copy: {
+            id,
+            copyNumber: index + 1,
+            status: CopyStatus.SOLD,
+            publisherId: 'pub_1',
+            libraryId: 'lib_1',
+          },
+        })),
+      }),
+    );
+    prisma.bookCopy.update.mockResolvedValue({ id: 'copy_1' });
+
+    await service.create(
+      {
+        items: [{ copyId: 'copy_1', quantity: 3, unitPriceCents: 2499 }],
+      },
+      libraryAdminUser('lib_1'),
+      'sale-key-qty',
+    );
+
+    expect(prisma.sale.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          totalCents: 7497,
+          items: {
+            create: [
+              { editionId: 'ed_1', copyId: 'copy_1', unitPriceCents: 2499, quantity: 1 },
+              { editionId: 'ed_1', copyId: 'copy_2', unitPriceCents: 2499, quantity: 1 },
+              { editionId: 'ed_1', copyId: 'copy_3', unitPriceCents: 2499, quantity: 1 },
+            ],
+          },
+        }),
+      }),
+    );
+    expect(prisma.bookCopy.update).toHaveBeenCalledTimes(3);
+    expect(applyMovement).toHaveBeenCalledTimes(3);
+    for (const copyId of ['copy_1', 'copy_2', 'copy_3']) {
+      expect(applyMovement).toHaveBeenCalledWith(
+        prisma,
+        expect.objectContaining({
+          type: MovementType.SALE,
+          copyId,
+          quantity: 1,
+          fromDelta: { onHand: -1, sold: 1 },
+        }),
+      );
+    }
+  });
+
+  it('rejects a quantity larger than library stock', async () => {
+    prisma.sale.findUnique.mockResolvedValue(null);
+    prisma.library.findUnique.mockResolvedValue(library);
+    const locked = {
+      id: 'copy_1',
+      status: CopyStatus.IN_STOCK_LIBRARY,
+      editionId: 'ed_1',
+      publisherId: 'pub_1',
+      libraryId: 'lib_1',
+      listPriceCents: 2499,
+      currency: 'USD',
+    };
+    prisma.$queryRaw
+      .mockResolvedValueOnce([locked])
+      .mockResolvedValueOnce([]);
+
+    await expect(
+      service.create(
+        { items: [{ copyId: 'copy_1', quantity: 2 }] },
+        libraryAdminUser('lib_1'),
+        'sale-key-short',
+      ),
+    ).rejects.toMatchObject({
+      response: expect.objectContaining({ error: 'INSUFFICIENT_STOCK' }),
+    });
+    expect(prisma.sale.create).not.toHaveBeenCalled();
+    expect(applyMovement).not.toHaveBeenCalled();
+  });
+
   it('rejects already-sold copies with ALREADY_SOLD', async () => {
     prisma.sale.findUnique.mockResolvedValue(null);
     prisma.library.findUnique.mockResolvedValue(library);

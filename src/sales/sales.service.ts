@@ -128,17 +128,28 @@ export class SalesService {
           copy: LockedCopy;
           unitPriceCents: number;
         }> = [];
+        const allocated = new Set<string>();
 
         for (const item of dto.items) {
-          const copy = await this.lockSellableCopy(tx, {
+          const copies = await this.lockSellableCopies(tx, {
             libraryId,
             copyId: item.copyId,
             qrToken: item.qrToken,
+            quantity: item.quantity ?? 1,
+            excludeIds: allocated,
           });
-          resolved.push({
-            copy,
-            unitPriceCents: item.unitPriceCents ?? copy.listPriceCents,
-          });
+          for (const copy of copies) {
+            if (allocated.has(copy.id)) {
+              throw new BadRequestException(
+                'Each copy may appear only once per sale',
+              );
+            }
+            allocated.add(copy.id);
+            resolved.push({
+              copy,
+              unitPriceCents: item.unitPriceCents ?? copy.listPriceCents,
+            });
+          }
         }
 
         const currency = resolved[0]?.copy.currency ?? 'USD';
@@ -441,6 +452,62 @@ export class SalesService {
     }
 
     return copy;
+  }
+
+  /**
+   * Lock the scanned copy plus enough other in-stock copies of the same
+   * edition at this library to satisfy `quantity`.
+   */
+  private async lockSellableCopies(
+    tx: Prisma.TransactionClient,
+    input: {
+      libraryId: string;
+      copyId?: string;
+      qrToken?: string;
+      quantity: number;
+      excludeIds: Set<string>;
+    },
+  ): Promise<LockedCopy[]> {
+    const quantity = input.quantity;
+    if (!Number.isInteger(quantity) || quantity < 1 || quantity > 100) {
+      throw new BadRequestException('Quantity must be a whole number from 1 to 100');
+    }
+
+    const primary = await this.lockSellableCopy(tx, input);
+    if (quantity === 1) {
+      return [primary];
+    }
+
+    const needed = quantity - 1;
+    const excluded = Prisma.join([primary.id, ...input.excludeIds]);
+    const extras = await tx.$queryRaw<LockedCopy[]>(Prisma.sql`
+      SELECT
+        c.id,
+        c.status,
+        c."editionId",
+        c."publisherId",
+        c."libraryId",
+        e."listPriceCents",
+        e.currency
+      FROM "BookCopy" c
+      INNER JOIN "Edition" e ON e.id = c."editionId"
+      WHERE c."editionId" = ${primary.editionId}
+        AND c."libraryId" = ${input.libraryId}
+        AND c.status = ${CopyStatus.IN_STOCK_LIBRARY}::"CopyStatus"
+        AND c.id NOT IN (${excluded})
+      ORDER BY c."copyNumber" ASC
+      LIMIT ${needed}
+      FOR UPDATE OF c
+    `);
+
+    if (extras.length < needed) {
+      throw new BadRequestException({
+        message: `Only ${extras.length + 1} copies of this title are in library stock`,
+        error: 'INSUFFICIENT_STOCK',
+      });
+    }
+
+    return [primary, ...extras];
   }
 
   private assertUniqueLineRefs(items: CreateSaleItemDto[]) {

@@ -27,6 +27,7 @@ const SENSITIVE_KEYS = new Set([
   'passwordHash',
   'refreshToken',
   'refreshTokenHash',
+  'tokenHash',
   'token',
   'accessToken',
 ]);

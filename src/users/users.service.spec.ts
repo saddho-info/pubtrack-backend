@@ -38,6 +38,9 @@ describe('UsersService', () => {
       findUnique: jest.fn(),
       update: jest.fn(),
     },
+    refreshSession: {
+      updateMany: jest.fn(),
+    },
     $transaction: jest.fn(),
   };
 
@@ -156,9 +159,14 @@ describe('UsersService', () => {
     expect(created.libraryId).toBe('lib_1');
   });
 
-  it('soft-deletes a scoped user and revokes their refresh token', async () => {
+  it('soft-deletes a scoped user and revokes their refresh sessions', async () => {
+    const deactivated = { ...staff, isActive: false };
     prisma.user.findUnique.mockResolvedValue(staff);
-    prisma.user.update.mockResolvedValue({ ...staff, isActive: false });
+    prisma.user.update.mockResolvedValue(deactivated);
+    prisma.refreshSession.updateMany.mockResolvedValue({ count: 1 });
+    prisma.$transaction.mockImplementation(async (ops: Promise<unknown>[]) =>
+      Promise.all(ops),
+    );
 
     const result = await service.softDelete(
       staff.id,
@@ -168,6 +176,10 @@ describe('UsersService', () => {
     expect(prisma.user.update).toHaveBeenCalledWith({
       where: { id: staff.id },
       data: { isActive: false, refreshTokenHash: null },
+    });
+    expect(prisma.refreshSession.updateMany).toHaveBeenCalledWith({
+      where: { userId: staff.id, revokedAt: null },
+      data: { revokedAt: expect.any(Date) },
     });
     expect(result.isActive).toBe(false);
   });

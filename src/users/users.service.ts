@@ -165,10 +165,17 @@ export class UsersService {
       throw new ForbiddenException('Cannot deactivate this user');
     }
 
-    const user = await this.prisma.user.update({
-      where: { id },
-      data: { isActive: false, refreshTokenHash: null },
-    });
+    const now = new Date();
+    const [user] = await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id },
+        data: { isActive: false, refreshTokenHash: null },
+      }),
+      this.prisma.refreshSession.updateMany({
+        where: { userId: id, revokedAt: null },
+        data: { revokedAt: now },
+      }),
+    ]);
     return toPublicUser(user);
   }
 

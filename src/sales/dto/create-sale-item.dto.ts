@@ -38,4 +38,17 @@ export class CreateSaleItemDto {
   @Min(0)
   @Max(100_000_000)
   unitPriceCents?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Number of in-stock copies of this edition to sell. The scanned copy is the first unit. Defaults to 1.',
+    minimum: 1,
+    maximum: 100,
+    default: 1,
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  quantity?: number;
 }

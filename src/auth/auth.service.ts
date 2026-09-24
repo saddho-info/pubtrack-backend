@@ -2,12 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
-import { User } from '../../generated/prisma/client';
-import {
-  hashRefreshToken,
-  verifyPassword,
-  verifyRefreshToken,
-} from '../common/utils/password';
+import { RefreshSession, User } from '../../generated/prisma/client';
+import { hashRefreshToken, verifyPassword } from '../common/utils/password';
 import { toPublicUser } from '../common/utils/public-user';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthTokensDto } from './dto/auth-response.dto';
@@ -71,6 +67,26 @@ export class AuthService {
       throw new UnauthorizedException('Invalid refresh token');
     }
 
+    const session = await this.prisma.refreshSession.findUnique({
+      where: { tokenHash: hashRefreshToken(refreshToken) },
+    });
+
+    if (!session || session.userId !== payload.sub) {
+      throw new UnauthorizedException('Invalid refresh token');
+    }
+
+    if (session.revokedAt) {
+      if (session.replacedById) {
+        await this.revokeSessionChain(session.id);
+      }
+      throw new UnauthorizedException('Invalid refresh token');
+    }
+
+    if (session.expiresAt.getTime() <= Date.now()) {
+      await this.revokeSession(session.id);
+      throw new UnauthorizedException('Invalid refresh token');
+    }
+
     const user = await this.prisma.user.findUnique({
       where: { id: payload.sub },
     });
@@ -79,45 +95,32 @@ export class AuthService {
       throw new UnauthorizedException('Invalid refresh token');
     }
 
-    if (!user.refreshTokenHash) {
-      throw new UnauthorizedException('Invalid refresh token');
-    }
-
-    const matches = verifyRefreshToken(refreshToken, user.refreshTokenHash);
-    if (!matches) {
-      await this.prisma.user.update({
-        where: { id: user.id },
-        data: { refreshTokenHash: null },
-      });
-      throw new UnauthorizedException('Invalid refresh token');
-    }
-
-    return this.issueTokens(user);
-  }
-
-  async logout(userId: string): Promise<void> {
-    await this.prisma.user.update({
-      where: { id: userId },
-      data: { refreshTokenHash: null },
-    });
+    return this.rotateSession(user, session);
   }
 
   async logoutSession(
     accessToken?: string,
     refreshToken?: string,
   ): Promise<void> {
-    if (accessToken) {
-      try {
-        const payload = await this.jwt.verifyAsync<JwtPayload>(accessToken, {
-          secret: this.config.getOrThrow<string>('JWT_ACCESS_SECRET'),
-        });
-        await this.logout(payload.sub);
-        return;
-      } catch {
-        // Access may already be expired; fall through to refresh token.
-      }
+    if (refreshToken) {
+      await this.logoutWithRefreshToken(refreshToken);
+      return;
     }
-    await this.logoutWithRefreshToken(refreshToken);
+
+    if (!accessToken) {
+      return;
+    }
+
+    try {
+      const payload = await this.jwt.verifyAsync<JwtPayload>(accessToken, {
+        secret: this.config.getOrThrow<string>('JWT_ACCESS_SECRET'),
+      });
+      if (payload.sid) {
+        await this.revokeSession(payload.sid);
+      }
+    } catch {
+      return;
+    }
   }
 
   async logoutWithRefreshToken(
@@ -127,17 +130,13 @@ export class AuthService {
       return;
     }
 
-    try {
-      const payload = await this.jwt.verifyAsync<JwtPayload>(refreshToken, {
-        secret: this.config.getOrThrow<string>('JWT_REFRESH_SECRET'),
-      });
-      await this.prisma.user.updateMany({
-        where: { id: payload.sub },
-        data: { refreshTokenHash: null },
-      });
-    } catch {
+    const session = await this.prisma.refreshSession.findUnique({
+      where: { tokenHash: hashRefreshToken(refreshToken) },
+    });
+    if (!session || session.revokedAt) {
       return;
     }
+    await this.revokeSession(session.id);
   }
 
   async me(userId: string) {
@@ -151,12 +150,58 @@ export class AuthService {
   }
 
   private async issueTokens(user: User): Promise<AuthTokensDto> {
+    const sessionId = randomUUID();
+    const tokens = await this.signTokenPair(user, sessionId);
+
+    await this.prisma.refreshSession.create({
+      data: {
+        id: sessionId,
+        userId: user.id,
+        tokenHash: hashRefreshToken(tokens.refreshToken),
+        expiresAt: this.refreshExpiresAt(),
+      },
+    });
+
+    return tokens;
+  }
+
+  private async rotateSession(
+    user: User,
+    current: RefreshSession,
+  ): Promise<AuthTokensDto> {
+    const sessionId = randomUUID();
+    const tokens = await this.signTokenPair(user, sessionId);
+    const now = new Date();
+
+    await this.prisma.$transaction([
+      this.prisma.refreshSession.create({
+        data: {
+          id: sessionId,
+          userId: user.id,
+          tokenHash: hashRefreshToken(tokens.refreshToken),
+          expiresAt: this.refreshExpiresAt(),
+        },
+      }),
+      this.prisma.refreshSession.update({
+        where: { id: current.id },
+        data: { revokedAt: now, replacedById: sessionId },
+      }),
+    ]);
+
+    return tokens;
+  }
+
+  private async signTokenPair(
+    user: User,
+    sessionId: string,
+  ): Promise<AuthTokensDto> {
     const payload: JwtPayload = {
       sub: user.id,
       email: user.email,
       role: user.role,
       publisherId: user.publisherId,
       libraryId: user.libraryId,
+      sid: sessionId,
     };
 
     const [accessToken, refreshToken] = await Promise.all([
@@ -173,11 +218,6 @@ export class AuthService {
       ),
     ]);
 
-    await this.prisma.user.update({
-      where: { id: user.id },
-      data: { refreshTokenHash: hashRefreshToken(refreshToken) },
-    });
-
     return {
       accessToken,
       refreshToken,
@@ -185,5 +225,37 @@ export class AuthService {
       tokenType: 'Bearer',
       user: toPublicUser(user),
     };
+  }
+
+  private refreshExpiresAt(): Date {
+    return new Date(Date.now() + this.refreshExpiresInSeconds * 1000);
+  }
+
+  private async revokeSession(sessionId: string): Promise<void> {
+    await this.prisma.refreshSession.updateMany({
+      where: { id: sessionId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+  }
+
+  private async revokeSessionChain(sessionId: string): Promise<void> {
+    const now = new Date();
+    let currentId: string | null = sessionId;
+
+    while (currentId) {
+      const current = await this.prisma.refreshSession.findUnique({
+        where: { id: currentId },
+      });
+      if (!current) {
+        return;
+      }
+      if (!current.revokedAt) {
+        await this.prisma.refreshSession.update({
+          where: { id: current.id },
+          data: { revokedAt: now },
+        });
+      }
+      currentId = current.replacedById;
+    }
   }
 }
